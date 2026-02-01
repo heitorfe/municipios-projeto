@@ -11,7 +11,9 @@
     Periodic snapshot fact table containing socio-economic indicators
     for Brazilian municipalities across census years.
 
-    Grain: One row per municipality per census year
+    Grain: One row per municipality per census year (2000, 2010)
+
+    Note: Data from IPEA AVS (Atlas da Vulnerabilidade Social)
 */
 
 with idhm as (
@@ -30,7 +32,6 @@ calendario as (
         sk_ano,
         ano
     from {{ ref('dim_calendario') }}
-    where has_idhm_data = true
 ),
 
 final as (
@@ -49,31 +50,41 @@ final as (
         i.idhm_longevidade,
         i.idhm_renda,
 
+        -- Education sub-indices
+        i.idhm_subescolaridade,
+        i.idhm_subfrequencia,
+
         -- Demographics
         i.esperanca_vida,
         i.taxa_envelhecimento,
 
         -- Education metrics
         i.taxa_analfabetismo_18_mais,
-        i.taxa_freq_basico,
-        i.taxa_freq_fundamental,
-        i.taxa_freq_medio,
-        i.taxa_freq_superior,
+        i.taxa_fundamental_completo,
+        i.taxa_medio_completo,
 
         -- Income metrics
         i.renda_per_capita,
         i.indice_gini,
-        i.taxa_pobreza_extrema,
         i.taxa_pobreza,
 
-        -- Urbanization
-        i.taxa_urbanizacao,
+        -- Vulnerability indices (IVS)
+        i.ivs,
+        i.ivs_infraestrutura,
+        i.ivs_capital_humano,
+        i.ivs_renda_trabalho,
+
+        -- Labor market
+        i.taxa_desemprego,
+        i.taxa_informalidade,
+
+        -- Infrastructure
+        i.taxa_energia_eletrica,
+        i.taxa_sem_saneamento,
 
         -- Calculated metrics
         round(i.idhm * 100, 2) as idhm_percentual,
-
-        -- IDHM ranking within year (computed at query time for freshness)
-        -- Note: This is for demonstration; in production, consider a separate ranking table
+        round(i.ivs * 100, 2) as ivs_percentual,
 
         -- Metadata
         current_timestamp as _loaded_at

@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: fct_eleicoes
+    description: >
+      Electoral results fact table aggregated by municipality/year/turno.
+      Contains winning party, vote totals, and competition metrics.
+    columns:
+      - name: sk_municipio
+        description: Foreign key to dim_municipio
+        tests:
+          - not_null
+      - name: sk_ano
+        description: Foreign key to dim_calendario
+        tests:
+          - not_null
+      - name: partido_vencedor
+        description: Winning party abbreviation
+
+  - name: fct_financas_municipais
+    description: >
+      Municipal finances fact table with expenses and revenues.
+      Aggregated at municipality-year level.
+    columns:
+      - name: sk_municipio
+        description: Foreign key to dim_municipio
+        tests:
+          - not_null
+      - name: sk_ano
+        description: Foreign key to dim_calendario
+        tests:
+          - not_null
+      - name: despesa_paga
+        description: Total paid expenses in BRL
+      - name: receita_liquida
+        description: Net revenue (gross - deductions) in BRL
+      - name: saldo_fiscal
+        description: Fiscal balance (revenue - expenses)
+
+  - name: fct_indicadores_sociais
+    description: >
+      Social indicators fact table with IDHM, IVS, and 20+ metrics.
+      Periodic snapshot grain: one row per municipality per census year.
+    columns:
+      - name: sk_municipio
+        description: Foreign key to dim_municipio
+        tests:
+          - not_null
+      - name: sk_ano
+        description: Foreign key to dim_calendario
+        tests:
+          - not_null
+      - name: idhm
+        description: Human Development Index (0-1 scale)
+      - name: ivs
+        description: Social Vulnerability Index (0-1 scale)

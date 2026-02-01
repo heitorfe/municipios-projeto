@@ -225,9 +225,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Atlas Brasil / PNUD](http://www.atlasbrasil.org.br/) for human development indicators
 - [TSE](https://dadosabertos.tse.jus.br/) for electoral data
 - [Tesouro Nacional](https://siconfi.tesouro.gov.br/) for municipal finance data
-
-## Contact
-
-Your Name - [@yourtwitter](https://twitter.com/yourtwitter) - your.email@example.com
-
-Project Link: [https://github.com/yourusername/municipios-projeto](https://github.com/yourusername/municipios-projeto)

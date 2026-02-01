@@ -1,0 +1,99 @@
+version: 2
+
+models:
+  - name: stg_municipios
+    description: >
+      Staging model for municipality directory.
+      Contains geographic and administrative info for all Brazilian municipalities.
+    columns:
+      - name: id_municipio_ibge
+        description: IBGE 7-digit municipality code
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_eleicoes
+    description: >
+      Staging model for electoral results from TSE.
+      Contains candidate-level results for municipal elections.
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+      - name: ano
+        description: Election year
+        tests:
+          - not_null
+
+  - name: stg_despesas
+    description: >
+      Staging model for municipal expenses from SICONFI.
+      Contains budget execution data by function/account.
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+      - name: ano
+        description: Fiscal year
+        tests:
+          - not_null
+      - name: valor
+        description: Expense amount in BRL
+        tests:
+          - not_null
+
+  - name: stg_receitas
+    description: >
+      Staging model for municipal revenues from SICONFI.
+      Contains budget revenue data by source/account.
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+      - name: ano
+        description: Fiscal year
+        tests:
+          - not_null
+      - name: valor
+        description: Revenue amount in BRL
+        tests:
+          - not_null
+
+  - name: stg_idhm
+    description: >
+      Staging model for Human Development Index (IDHM) from IPEA AVS.
+      Contains IDHM components and 20+ social vulnerability indicators.
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+      - name: ano
+        description: Census year (2000, 2010)
+        tests:
+          - not_null
+      - name: idhm
+        description: Human Development Index (0-1 scale)
+        tests:
+          - not_null
+
+  - name: stg_populacao
+    description: >
+      Staging model for population estimates from IBGE.
+      Contains annual population data from 1991 to 2025.
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+      - name: ano
+        description: Reference year
+        tests:
+          - not_null
+      - name: populacao
+        description: Population count
+        tests:
+          - not_null

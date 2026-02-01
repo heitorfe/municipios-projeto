@@ -1,0 +1,136 @@
+[project]
+name = "municipios-projeto"
+version = "0.1.0"
+description = "Data analytics project analyzing socio-economic indicators across Brazilian municipalities"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+keywords = [
+    "brazil",
+    "municipalities",
+    "data-analytics",
+    "ibge",
+    "idhm",
+    "data-engineering"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+dependencies = [
+    # Data extraction
+    "basedosdados>=2.0.0",
+    "httpx>=0.27.0",
+
+    # Data processing
+    "polars>=1.0.0",
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+
+    # Database
+    "duckdb>=1.0.0",
+
+    # Visualization
+    "streamlit>=1.40.0",
+    "plotly>=5.24.0",
+
+    # Geographic data
+    "geopandas>=1.0.0",
+    "geobr>=0.2.0",
+
+    # Utilities
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "loguru>=0.7.0",
+    "rich>=13.9.0",
+    "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+]
+
+notebooks = [
+    "jupyter>=1.1.0",
+    "jupyterlab>=4.3.0",
+    "matplotlib>=3.9.0",
+    "seaborn>=0.13.0",
+    "scipy>=1.14.0",
+    "scikit-learn>=1.5.0",
+]
+
+dbt = [
+    "dbt-core>=1.8.0",
+    "dbt-duckdb>=1.8.0",
+]
+
+all = [
+    "municipios-projeto[dev,notebooks,dbt]",
+]
+
+[project.scripts]
+extract = "scripts.extract_data:main"
+dashboard = "dashboard.app:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/municipios-projeto"
+Repository = "https://github.com/yourusername/municipios-projeto"
+Documentation = "https://github.com/yourusername/municipios-projeto#readme"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "D",      # pydocstyle
+]
+ignore = [
+    "D100",   # Missing docstring in public module
+    "D104",   # Missing docstring in public package
+    "D203",   # 1 blank line required before class docstring
+    "D213",   # Multi-line docstring summary should start at the second line
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+"notebooks/*" = ["D", "E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=src --cov-report=term-missing"

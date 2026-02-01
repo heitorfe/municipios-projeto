@@ -1,0 +1,90 @@
+version: 2
+
+models:
+  - name: dim_municipio
+    description: >
+      Conformed municipality dimension containing geographic and administrative
+      information for all 5,570+ Brazilian municipalities.
+      This is the central dimension linking all fact tables.
+
+      Note: Population and IDHM data can be added when those datasets are extracted.
+    config:
+      tags: ['dimension', 'municipality', 'gold']
+
+    columns:
+      - name: sk_municipio
+        description: Surrogate key for the municipality
+        tests:
+          - unique
+          - not_null
+
+      - name: id_municipio_ibge
+        description: IBGE 7-digit municipality code (natural key)
+        tests:
+          - unique
+          - not_null
+
+      - name: id_municipio_tse
+        description: TSE municipality code for electoral data joins
+
+      - name: nome_municipio
+        description: Official municipality name
+        tests:
+          - not_null
+
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
+                       'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
+                       'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
+
+      - name: regiao
+        description: Geographic region (Norte, Nordeste, Sudeste, Sul, Centro-Oeste)
+        tests:
+          - accepted_values:
+              values: ['Norte', 'Nordeste', 'Sudeste', 'Sul', 'Centro-Oeste']
+
+      - name: mesorregiao
+        description: IBGE mesoregion name
+
+      - name: microrregiao
+        description: IBGE microregion name
+
+      - name: is_capital
+        description: Flag indicating if municipality is a state capital
+
+      - name: is_amazonia_legal
+        description: Flag indicating if municipality is in Legal Amazon
+
+      - name: ddd
+        description: Phone area code (useful for regional analysis)
+
+  - name: dim_calendario
+    description: >
+      Calendar dimension with year-level grain.
+      Contains flags for census years, election years, and data availability.
+
+    columns:
+      - name: sk_ano
+        description: Surrogate key (same as year for simplicity)
+        tests:
+          - unique
+          - not_null
+
+      - name: ano
+        description: Calendar year
+        tests:
+          - unique
+          - not_null
+
+      - name: is_ano_censo
+        description: Flag indicating IBGE census year (1991, 2000, 2010, 2022)
+
+      - name: is_ano_eleitoral_municipal
+        description: Flag indicating municipal election year (every 4 years)
+
+      - name: has_idhm_data
+        description: Flag indicating IDHM data availability

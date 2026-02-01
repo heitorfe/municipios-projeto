@@ -1,0 +1,132 @@
+version: 2
+
+sources:
+  - name: raw_base_dos_dados
+    description: >
+      Raw data extracted from Base dos Dados BigQuery.
+      These are Parquet files stored in the Bronze layer (data/raw/).
+    meta:
+      owner: data_engineering
+      data_source: Base dos Dados (BigQuery)
+
+    tables:
+      - name: municipio
+        description: >
+          Municipality directory with code crosswalk.
+          Contains IBGE, TSE, BCB codes and geographic information.
+          Note: Access via read_parquet() in staging models, not via source().
+        meta:
+          access_method: read_parquet('../data/raw/municipio.parquet')
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: id_municipio_tse
+            description: TSE municipality code
+          - name: nome
+            description: Municipality name
+          - name: sigla_uf
+            description: State abbreviation (2 letters)
+
+      - name: populacao
+        description: >
+          Historical population by municipality.
+          Source: IBGE population estimates and census data.
+        external:
+          location: "read_parquet('../data/raw/municipio.parquet')"
+        meta:
+          source_table: br_ibge_populacao.municipio
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Reference year
+          - name: populacao
+            description: Population count
+
+      - name: idhm
+        description: >
+          Human Development Index by municipality.
+          Source: Atlas Brasil (PNUD/IPEA/FJP).
+          Contains IDHM and 200+ socio-economic indicators.
+        external:
+          location: "read_parquet('../data/raw/municipio.parquet')"
+        meta:
+          source_table: br_pnud_atlas.municipio
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Census year (1991, 2000, 2010)
+          - name: idhm
+            description: Human Development Index (0-1 scale)
+          - name: idhm_e
+            description: Education component of IDHM
+          - name: idhm_l
+            description: Longevity component of IDHM
+          - name: idhm_r
+            description: Income component of IDHM
+
+      - name: eleicoes
+        description: >
+          Electoral results by municipality.
+          Source: TSE (Tribunal Superior Eleitoral).
+          Filtered for mayors (prefeitos) only.
+        external:
+          location: "read_parquet('../data/raw/resultados_candidato_municipio.parquet')"
+        meta:
+          source_table: br_tse_eleicoes.resultados_candidato_municipio
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Election year
+          - name: sigla_partido
+            description: Party abbreviation
+          - name: resultado
+            description: Election result (eleito, nao_eleito, etc.)
+
+      - name: despesas
+        description: >
+          Municipal expenses by function.
+          Source: SICONFI/Tesouro Nacional.
+        external:
+          location: "read_parquet('../data/raw/municipio_despesas_funcao.parquet')"
+        meta:
+          source_table: br_me_siconfi.municipio_despesas_funcao
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Fiscal year
+          - name: valor
+            description: Expense amount in BRL
+
+      - name: receitas
+        description: >
+          Municipal revenues by source.
+          Source: SICONFI/Tesouro Nacional.
+        external:
+          location: "read_parquet('../data/raw/municipio_receitas_orcamentarias.parquet')"
+        meta:
+          source_table: br_me_siconfi.municipio_receitas_orcamentarias
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Fiscal year
+          - name: valor
+            description: Revenue amount in BRL
+
+      - name: saneamento
+        description: >
+          Sanitation indicators by municipality.
+          Source: SNIS (Sistema Nacional de Informações sobre Saneamento).
+        external:
+          location: "read_parquet('../data/raw/municipio.parquet')"
+        meta:
+          source_table: br_mdr_snis.municipio
+        columns:
+          - name: id_municipio
+            description: IBGE 7-digit municipality code
+          - name: ano
+            description: Reference year

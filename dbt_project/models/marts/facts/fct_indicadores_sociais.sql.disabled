@@ -1,0 +1,86 @@
+{{
+    config(
+        materialized='table',
+        tags=['fact', 'social', 'gold']
+    )
+}}
+
+/*
+    Social Indicators Fact Table
+
+    Periodic snapshot fact table containing socio-economic indicators
+    for Brazilian municipalities across census years.
+
+    Grain: One row per municipality per census year
+*/
+
+with idhm as (
+    select * from {{ ref('stg_idhm') }}
+),
+
+municipios as (
+    select
+        sk_municipio,
+        id_municipio_ibge
+    from {{ ref('dim_municipio') }}
+),
+
+calendario as (
+    select
+        sk_ano,
+        ano
+    from {{ ref('dim_calendario') }}
+    where has_idhm_data = true
+),
+
+final as (
+    select
+        -- Foreign keys
+        m.sk_municipio,
+        c.sk_ano,
+
+        -- Natural keys (for debugging)
+        i.id_municipio,
+        i.ano,
+
+        -- IDHM Components
+        i.idhm,
+        i.idhm_educacao,
+        i.idhm_longevidade,
+        i.idhm_renda,
+
+        -- Demographics
+        i.esperanca_vida,
+        i.taxa_envelhecimento,
+
+        -- Education metrics
+        i.taxa_analfabetismo_18_mais,
+        i.taxa_freq_basico,
+        i.taxa_freq_fundamental,
+        i.taxa_freq_medio,
+        i.taxa_freq_superior,
+
+        -- Income metrics
+        i.renda_per_capita,
+        i.indice_gini,
+        i.taxa_pobreza_extrema,
+        i.taxa_pobreza,
+
+        -- Urbanization
+        i.taxa_urbanizacao,
+
+        -- Calculated metrics
+        round(i.idhm * 100, 2) as idhm_percentual,
+
+        -- IDHM ranking within year (computed at query time for freshness)
+        -- Note: This is for demonstration; in production, consider a separate ranking table
+
+        -- Metadata
+        current_timestamp as _loaded_at
+
+    from idhm i
+    inner join municipios m on i.id_municipio = m.id_municipio_ibge
+    inner join calendario c on i.ano = c.ano
+)
+
+select * from final

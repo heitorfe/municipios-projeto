@@ -1,0 +1,25 @@
+# dbt Profile Configuration for Municipios Analytics
+# Copy this file to profiles.yml and adjust the path to your database
+#
+# IMPORTANT: profiles.yml should NOT be committed to version control
+# as it may contain sensitive information
+
+municipios_analytics:
+  outputs:
+    dev:
+      type: duckdb
+      # Path to your DuckDB database file
+      path: '../data/warehouse/analytics.duckdb'
+      # Optional: external Parquet files location
+      external_root: '../data/raw'
+      # Optional: threads for parallel execution
+      threads: 4
+
+    prod:
+      type: duckdb
+      path: '../data/warehouse/analytics_prod.duckdb'
+      external_root: '../data/raw'
+      threads: 8
+
+  # Default target
+  target: dev

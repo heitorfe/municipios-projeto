@@ -1,0 +1,238 @@
+version: 2
+
+models:
+  - name: fct_mandato_completo
+    description: >
+      Fully denormalized fact table for political-economy analysis of Brazilian
+      mayoral terms. Contains everything needed for research without additional joins.
+
+      Grain: One row per municipality per mayoral term (4-year mandate)
+
+      Includes:
+      - Municipality geography and demographics
+      - Electoral results and party ideology
+      - Fiscal performance during term
+      - Social indicators (2000 and 2010 census)
+      - Political continuity metrics
+      - Analytical flags and categories
+
+    config:
+      tags: ['fact', 'political', 'gold', 'denormalized']
+
+    columns:
+      - name: sk_mandato
+        description: Surrogate key (municipality + election year)
+        tests:
+          - unique
+          - not_null
+
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        tests:
+          - not_null
+
+      - name: ano_eleicao
+        description: Election year (mandate starts in ano_eleicao + 1)
+
+      - name: partido_vencedor
+        description: Winning party abbreviation
+
+      - name: bloco_ideologico
+        description: Ideology bloc (esquerda, centro, direita)
+        tests:
+          - accepted_values:
+              values: ['esquerda', 'centro', 'direita']
+
+      - name: score_ideologico
+        description: Numeric ideology score (-2=left to +2=right)
+
+      - name: media_saldo_fiscal
+        description: Average fiscal balance during mandate (BRL)
+
+      - name: is_continuidade_partidaria
+        description: Same party as previous mandate (boolean)
+
+  - name: mart_painel_mandatos
+    description: >
+      Panel data mart optimized for econometric analysis.
+      Ready for fixed effects regression, difference-in-differences,
+      and other panel data methods.
+
+      Compatible with:
+      - Stata: xtset id_municipio ano_eleicao
+      - Python: linearmodels PanelOLS
+      - R: plm package
+
+      Grain: One row per municipality per mandate
+
+    config:
+      tags: ['mart', 'analytics', 'panel']
+
+    columns:
+      - name: id_municipio
+        description: Panel cross-sectional unit (municipality)
+        tests:
+          - not_null
+
+      - name: ano_eleicao
+        description: Panel time unit (election year)
+        tests:
+          - not_null
+
+      - name: score_ideologico
+        description: Ideology score (-2 to +2) for regression
+
+      - name: saldo_fiscal
+        description: Outcome variable - fiscal balance
+
+      - name: fe_municipio
+        description: Fixed effect group - municipality
+
+      - name: fe_tempo
+        description: Fixed effect group - time
+
+  - name: mart_correlacoes_politicas
+    description: >
+      Cross-sectional dataset aggregated at municipality level.
+      Summarizes entire political history for correlation analysis.
+
+      Use cases:
+      - Correlation matrices
+      - Scatter plots with trend lines
+      - Regional comparisons
+      - Segmentation analysis
+
+      Grain: One row per municipality (aggregated across all mandates)
+
+    config:
+      tags: ['mart', 'analytics', 'correlation']
+
+    columns:
+      - name: id_municipio
+        description: IBGE municipality code
+        tests:
+          - unique
+          - not_null
+
+      - name: media_score_ideologico
+        description: Average ideology score across all mandates
+
+      - name: taxa_continuidade_partidaria
+        description: Proportion of mandates with party continuity (0-1)
+
+      - name: volatilidade_ideologica_media
+        description: Average absolute ideological change per mandate
+
+      - name: perfil_ideologico_historico
+        description: Historical ideology classification
+        tests:
+          - accepted_values:
+              values:
+                - 'Historicamente de Esquerda'
+                - 'Historicamente de Direita'
+                - 'Politicamente Misto'
+
+      - name: score_qualidade_politica
+        description: Composite political quality score (0-10)
+
+      - name: score_qualidade_fiscal
+        description: Composite fiscal quality score (0-10)
+
+  - name: mart_diff_in_diff
+    description: >
+      Structured dataset for causal inference analysis.
+      Designed for difference-in-differences and event studies.
+
+      Treatment definitions:
+      - Party change vs continuity
+      - Ideological shift magnitude
+      - Direction of ideological transition
+
+      Includes:
+      - Pre-period (previous mandate) outcomes
+      - Post-period (current mandate) outcomes
+      - Calculated differences
+
+      Grain: One row per municipality per mandate (with lag variables)
+
+    config:
+      tags: ['mart', 'analytics', 'causal']
+
+    columns:
+      - name: id_municipio
+        description: Municipality identifier
+
+      - name: ano_eleicao
+        description: Election year
+
+      - name: tratamento_mudanca_partido
+        description: Binary treatment - party changed (1) or not (0)
+
+      - name: tratamento_mudanca_ideologia_forte
+        description: Binary treatment - strong ideological shift (|delta| >= 2)
+
+      - name: direcao_transicao
+        description: Direction of ideological transition
+        tests:
+          - accepted_values:
+              values:
+                - 'esquerda_para_direita'
+                - 'centro_para_direita'
+                - 'direita_para_esquerda'
+                - 'centro_para_esquerda'
+                - 'sem_mudanca_significativa'
+
+      - name: saldo_fiscal_post
+        description: Outcome - fiscal balance in current mandate
+
+      - name: saldo_fiscal_pre
+        description: Outcome - fiscal balance in previous mandate
+
+      - name: diff_saldo_fiscal
+        description: Post - Pre difference in fiscal balance
+
+      - name: valid_for_did
+        description: Flag indicating if row is valid for DiD analysis
+
+
+seeds:
+  - name: seed_partidos
+    description: >
+      Brazilian political parties with ideology classification.
+      Based on academic literature:
+      - Power & Zucco (2009, 2012): Brazilian Legislative Surveys
+      - Tarouco & Madeira (2013): Party programs analysis
+      - Bolognesi, Ribeiro & Codato (2023): Updated classifications
+
+    columns:
+      - name: numero_partido
+        description: TSE party number
+        tests:
+          - unique
+          - not_null
+
+      - name: sigla_partido
+        description: Party abbreviation (3-4 letters)
+
+      - name: nome_partido
+        description: Full party name
+
+      - name: espectro_ideologico
+        description: 5-point ideology scale
+        tests:
+          - accepted_values:
+              values:
+                - 'esquerda'
+                - 'centro-esquerda'
+                - 'centro'
+                - 'centro-direita'
+                - 'direita'
+
+      - name: bloco_ideologico
+        description: 3-point ideology grouping (esquerda, centro, direita)
+
+      - name: score_ideologico
+        description: Numeric score (-2 to +2)
+
+      - name: is_big_tent
+        description: Party is "catch-all" without clear ideology

@@ -130,3 +130,83 @@ sources:
             description: IBGE 7-digit municipality code
           - name: ano
             description: Reference year
+
+  # =========================================================================
+  # POLITICAL-ECONOMY EXTENSION SOURCES
+  # =========================================================================
+
+  - name: raw
+    description: >
+      Additional raw data sources for political-economy analysis.
+      Includes education, health, and social transfer data.
+
+    tables:
+      - name: ideb_municipio
+        description: >
+          IDEB - Education Development Index by municipality.
+          Biennial data (every 2 years) measuring education quality.
+          Source: INEP/MEC.
+        external:
+          location: "read_parquet('../data/raw/ideb_municipio.parquet')"
+        meta:
+          source_table: br_inep_ideb.municipio
+          frequency: biennial
+          coverage: 2005-2023
+
+      - name: mortalidade_municipio
+        description: >
+          Mortality data aggregated by municipality and cause.
+          Pre-aggregated from SIM microdata.
+          Source: DATASUS/MS.
+        external:
+          location: "read_parquet('../data/raw/mortalidade_municipio.parquet')"
+        meta:
+          source_table: br_ms_sim.municipio_causa
+          frequency: annual
+          coverage: 1996-2022
+
+      - name: nascimentos_municipio
+        description: >
+          Live births by municipality.
+          Used for calculating mortality rates.
+          Source: SINASC/DATASUS.
+        external:
+          location: "read_parquet('../data/raw/nascimentos_municipio.parquet')"
+        meta:
+          source_table: br_ms_sinasc.municipio
+          frequency: annual
+          coverage: 1996-2022
+
+      - name: bolsa_familia_municipio
+        description: >
+          Bolsa Familia conditional cash transfer program.
+          Beneficiaries and transfer amounts by municipality.
+          Source: MDS/Cadastro Unico.
+        external:
+          location: "read_parquet('../data/raw/bolsa_familia_municipio.parquet')"
+        meta:
+          source_table: br_mds_bolsa_familia.municipio
+          frequency: annual/monthly
+          coverage: 2004-2023
+
+      - name: candidatos
+        description: >
+          Electoral candidates with personal characteristics.
+          Gender, age, education, occupation, wealth.
+          Source: TSE.
+        external:
+          location: "read_parquet('../data/raw/candidatos.parquet')"
+        meta:
+          source_table: br_tse_eleicoes.candidatos
+          frequency: election years
+          coverage: 1994-2024
+
+      - name: partidos_tse
+        description: >
+          Political parties official registry.
+          Creation and extinction dates.
+          Source: TSE.
+        external:
+          location: "read_parquet('../data/raw/partidos.parquet')"
+        meta:
+          source_table: br_tse_eleicoes.partidos

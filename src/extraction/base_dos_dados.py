@@ -35,40 +35,79 @@ class TableConfig:
     table: str
     description: str
     query: str | None = None  # Custom query, if None extracts full table
+    output_name: str | None = None  # Custom output filename (without .parquet), avoids conflicts
+
+    @property
+    def filename(self) -> str:
+        """Get the output filename (without extension)."""
+        return self.output_name or self.table
 
 
-# Default tables to extract from Base dos Dados
-DEFAULT_TABLES: list[TableConfig] = [
+# =============================================================================
+# BASE TABLES - Core municipality data
+# =============================================================================
+BASE_TABLES: list[TableConfig] = [
     TableConfig(
         dataset="br_bd_diretorios_brasil",
         table="municipio",
         description="Municipality directory with code crosswalk (IBGE, TSE, BCB)",
+        # Keep as 'municipio' for backward compatibility with stg_municipios.sql
     ),
     TableConfig(
         dataset="br_ibge_populacao",
         table="municipio",
         description="Historical population by municipality (1991-2025)",
+        output_name="populacao",  # Matches existing stg_populacao.sql
     ),
     TableConfig(
         dataset="br_ibge_pib",
         table="municipio",
         description="Municipal GDP (2002-2021)",
+        output_name="pib_municipio",
     ),
     TableConfig(
         dataset="br_pnud_atlas",
         table="municipio",
         description="Human Development Index (IDHM) and 200+ indicators",
+        output_name="idhm",  # Matches existing stg_idhm.sql
     ),
+]
+
+# =============================================================================
+# ELECTORAL TABLES - Political data from TSE
+# =============================================================================
+ELECTORAL_TABLES: list[TableConfig] = [
     TableConfig(
         dataset="br_tse_eleicoes",
         table="resultados_candidato_municipio",
-        description="Electoral results by municipality (1996-2024)",
+        description="Electoral results by municipality - mayors only (1996-2024)",
         query="""
         SELECT *
         FROM `basedosdados.br_tse_eleicoes.resultados_candidato_municipio`
         WHERE cargo = 'prefeito'
         """,
     ),
+    TableConfig(
+        dataset="br_tse_eleicoes",
+        table="candidatos",
+        description="Candidate details - gender, age, education, occupation (1994-2024)",
+        query="""
+        SELECT *
+        FROM `basedosdados.br_tse_eleicoes.candidatos`
+        WHERE cargo = 'prefeito'
+        """,
+    ),
+    TableConfig(
+        dataset="br_tse_eleicoes",
+        table="partidos",
+        description="Political parties registry - creation and extinction dates",
+    ),
+]
+
+# =============================================================================
+# FISCAL TABLES - Municipal finances from SICONFI
+# =============================================================================
+FISCAL_TABLES: list[TableConfig] = [
     TableConfig(
         dataset="br_me_siconfi",
         table="municipio_despesas_funcao",
@@ -77,14 +116,137 @@ DEFAULT_TABLES: list[TableConfig] = [
     TableConfig(
         dataset="br_me_siconfi",
         table="municipio_receitas_orcamentarias",
-        description="Municipal revenues (2013-2023)",
+        description="Municipal revenues with transfer breakdown (2013-2023)",
     ),
+]
+
+# =============================================================================
+# EDUCATION TABLES - Annual education metrics
+# =============================================================================
+EDUCATION_TABLES: list[TableConfig] = [
+    TableConfig(
+        dataset="br_inep_ideb",
+        table="municipio",
+        description="IDEB - Education Development Index by municipality (2005-2023, biennial)",
+        output_name="ideb_municipio",  # Avoid conflict with other 'municipio' tables
+    ),
+    TableConfig(
+        dataset="br_inep_censo_escolar",
+        table="municipio",
+        description="School Census - enrollment, schools, teachers by municipality (annual)",
+        query="""
+        SELECT *
+        FROM `basedosdados.br_inep_censo_escolar.municipio`
+        WHERE ano >= 2000
+        """,
+        output_name="censo_escolar_municipio",
+    ),
+]
+
+# =============================================================================
+# HEALTH TABLES - Mortality and health indicators
+# =============================================================================
+HEALTH_TABLES: list[TableConfig] = [
+    TableConfig(
+        dataset="br_ms_sim",
+        table="municipio_causa",
+        description="Mortality by municipality and cause of death (1996-2022)",
+        query="""
+        SELECT
+            ano,
+            id_municipio,
+            causa_basica_categoria,
+            COUNT(*) as obitos,
+            SUM(CASE WHEN idade_obito_anos < 1 THEN 1 ELSE 0 END) as obitos_infantis,
+            SUM(CASE WHEN idade_obito_anos < 5 THEN 1 ELSE 0 END) as obitos_menores_5
+        FROM `basedosdados.br_ms_sim.microdados`
+        WHERE ano >= 1996
+        GROUP BY ano, id_municipio, causa_basica_categoria
+        """,
+        output_name="mortalidade_municipio",  # Clearer name for output
+    ),
+    TableConfig(
+        dataset="br_ms_sinasc",
+        table="municipio",
+        description="Live births by municipality - for mortality rate calculation",
+        query="""
+        SELECT
+            ano,
+            id_municipio_nascimento as id_municipio,
+            COUNT(*) as nascidos_vivos
+        FROM `basedosdados.br_ms_sinasc.microdados`
+        WHERE ano >= 1996
+        GROUP BY ano, id_municipio_nascimento
+        """,
+        output_name="nascimentos_municipio",  # Avoid conflict with other 'municipio' tables
+    ),
+]
+
+# =============================================================================
+# SOCIAL TRANSFER TABLES - Federal programs
+# =============================================================================
+SOCIAL_TABLES: list[TableConfig] = [
+    TableConfig(
+        dataset="br_mds_bolsa_familia",
+        table="municipio",
+        description="Bolsa Familia transfers by municipality (2004-2023)",
+        query="""
+        SELECT *
+        FROM `basedosdados.br_mds_bolsa_familia.municipio`
+        WHERE ano >= 2004
+        """,
+        output_name="bolsa_familia_municipio",  # Descriptive name
+    ),
+    TableConfig(
+        dataset="br_mds_cadastro_unico",
+        table="municipio",
+        description="Cadastro Unico - families registered for social programs",
+        query="""
+        SELECT *
+        FROM `basedosdados.br_mds_cadastro_unico.municipio`
+        WHERE ano >= 2010
+        """,
+        output_name="cadastro_unico_municipio",  # Avoid conflict
+    ),
+]
+
+# =============================================================================
+# INFRASTRUCTURE TABLES
+# =============================================================================
+INFRASTRUCTURE_TABLES: list[TableConfig] = [
     TableConfig(
         dataset="br_mdr_snis",
         table="municipio",
-        description="Sanitation indicators (water, sewage, waste)",
+        description="Sanitation indicators (water, sewage, waste) - annual",
+        output_name="saneamento_municipio",  # Descriptive name
     ),
 ]
+
+# =============================================================================
+# COMBINED TABLE LISTS
+# =============================================================================
+
+# Default tables (original set for backward compatibility)
+DEFAULT_TABLES: list[TableConfig] = (
+    BASE_TABLES +
+    [ELECTORAL_TABLES[0]] +  # Just the main election results
+    FISCAL_TABLES +
+    [INFRASTRUCTURE_TABLES[0]]
+)
+
+# Full political-economy analysis tables
+POLITICAL_ECONOMY_TABLES: list[TableConfig] = (
+    BASE_TABLES +
+    ELECTORAL_TABLES +
+    FISCAL_TABLES +
+    EDUCATION_TABLES +
+    HEALTH_TABLES +
+    SOCIAL_TABLES +
+    INFRASTRUCTURE_TABLES
+)
+
+# All available tables
+ALL_TABLES: list[TableConfig] = POLITICAL_ECONOMY_TABLES
 
 
 class BaseDadosExtractor:
@@ -152,11 +314,11 @@ class BaseDadosExtractor:
         Returns:
             Polars DataFrame with the extracted data.
         """
-        output_path = self.output_dir / f"{config.table}.parquet"
+        output_path = self.output_dir / f"{config.filename}.parquet"
 
         # Check if file already exists
         if output_path.exists() and not force:
-            logger.info(f"Skipping {config.table} - file already exists. Use force=True to re-extract.")
+            logger.info(f"Skipping {config.filename} - file already exists. Use force=True to re-extract.")
             return pl.read_parquet(output_path)
 
         logger.info(f"Extracting: {config.dataset}.{config.table}")
@@ -182,7 +344,7 @@ class BaseDadosExtractor:
             df.write_parquet(output_path, compression="zstd")
 
             logger.success(
-                f"Extracted {config.table}: {len(df):,} rows, "
+                f"Saved {config.filename}.parquet: {len(df):,} rows, "
                 f"{df.estimated_size() / 1024 / 1024:.2f} MB"
             )
 
@@ -263,18 +425,76 @@ class BaseDadosExtractor:
         return [p.stem for p in self.output_dir.glob("*.parquet")]
 
 
+def extract_political_economy(
+    billing_project: str | None = None,
+    output_dir: Path | str = "data/raw",
+    force: bool = False,
+) -> dict[str, pl.DataFrame]:
+    """
+    Extract all tables needed for political-economy analysis.
+
+    This includes:
+    - Base municipality data (population, GDP, IDHM)
+    - Full electoral data (results, candidates, parties)
+    - Fiscal data (revenues, expenses)
+    - Education indicators (IDEB, census)
+    - Health indicators (mortality, births)
+    - Social transfers (Bolsa Familia, Cadastro Unico)
+    - Infrastructure (sanitation)
+
+    Args:
+        billing_project: Google Cloud project ID for billing.
+        output_dir: Directory to save Parquet files.
+        force: If True, re-extract all tables even if files exist.
+
+    Returns:
+        Dictionary mapping table names to DataFrames.
+    """
+    extractor = BaseDadosExtractor(
+        billing_project=billing_project,
+        output_dir=output_dir,
+    )
+    return extractor.extract_all(tables=POLITICAL_ECONOMY_TABLES, force=force)
+
+
 def main() -> None:
     """Main entry point for extraction script."""
+    import argparse
     from dotenv import load_dotenv
 
     # Load environment variables
     load_dotenv()
 
+    parser = argparse.ArgumentParser(description="Extract data from Base dos Dados")
+    parser.add_argument(
+        "--mode",
+        choices=["default", "political-economy", "all"],
+        default="default",
+        help="Extraction mode: default (basic tables), political-economy (full analysis), all (everything)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-extraction even if files exist",
+    )
+    args = parser.parse_args()
+
+    # Select tables based on mode
+    if args.mode == "political-economy":
+        tables = POLITICAL_ECONOMY_TABLES
+        logger.info("Mode: Political-Economy Analysis (full dataset)")
+    elif args.mode == "all":
+        tables = ALL_TABLES
+        logger.info("Mode: All available tables")
+    else:
+        tables = DEFAULT_TABLES
+        logger.info("Mode: Default (basic tables)")
+
     # Create extractor
     extractor = BaseDadosExtractor()
 
-    # Extract all tables
-    extractor.extract_all()
+    # Extract tables
+    extractor.extract_all(tables=tables, force=args.force)
 
     # Print summary
     logger.info("\n=== Extraction Summary ===")

@@ -194,6 +194,76 @@ models:
       - name: valid_for_did
         description: Flag indicating if row is valid for DiD analysis
 
+  - name: mart_painel_municipal
+    description: >
+      Long-format annual panel data for longitudinal econometric analysis.
+      One row per municipality per year - suitable for panel methods with
+      finer time granularity than mart_painel_mandatos.
+
+      Designed for:
+      - Panel regression with annual fixed effects
+      - Time series analysis at municipal level
+      - Year-over-year change detection
+      - Interrupted time series designs
+      - Event studies around elections
+
+      Compatible with:
+      - Stata: xtset id_municipio ano
+      - Python: linearmodels PanelOLS
+      - R: plm package
+
+      Grain: One row per municipality per year (2000-2024)
+
+    config:
+      tags: ['mart', 'analytics', 'panel', 'annual']
+
+    columns:
+      - name: id_municipio
+        description: Panel cross-sectional unit (municipality)
+        tests:
+          - not_null
+
+      - name: ano
+        description: Panel time unit (calendar year)
+        tests:
+          - not_null
+
+      - name: receita_per_capita
+        description: Revenue per resident (BRL)
+
+      - name: despesa_per_capita
+        description: Expenditure per resident (BRL)
+
+      - name: saldo_fiscal
+        description: Fiscal balance (revenue - expenditure)
+
+      - name: partido_vencedor
+        description: Current mandate's winning party
+
+      - name: score_ideologico
+        description: Current mandate's ideology score (-2 to +2)
+
+      - name: ano_no_mandato
+        description: Year within current mandate (1-4)
+
+      - name: is_ano_eleitoral
+        description: Flag for election years
+
+      - name: delta_receita
+        description: First difference of revenue (current - previous year)
+
+      - name: crescimento_receita_pct
+        description: Revenue growth rate (%)
+
+      - name: fe_municipio
+        description: Fixed effect group - municipality
+
+      - name: fe_ano
+        description: Fixed effect group - year
+
+      - name: fe_uf
+        description: Fixed effect group - state
+
 
 seeds:
   - name: seed_partidos

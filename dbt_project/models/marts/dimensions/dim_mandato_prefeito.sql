@@ -1,7 +1,7 @@
 {{
     config(
         materialized='table',
-        tags=['dimension', 'political', 'gold']
+        tags=['dimension', 'electoral', 'gold']
     )
 }}
 
@@ -11,7 +11,7 @@
     ==========================================================================
 
     Dimension table tracking mayoral terms (mandates) at the municipality level.
-    Links municipalities to election results and party ideology.
+    Contains electoral metadata without political ideology classification.
 
     Grain: One row per municipality per mandate term
 
@@ -22,12 +22,13 @@
     - 2012 election -> 2013-2016 mandate
     - 2016 election -> 2017-2020 mandate
     - 2020 election -> 2021-2024 mandate
+    - 2024 election -> 2025-2028 mandate
 
     Key Features:
-    - Political continuity tracking (same party reelection)
-    - Ideological transition analysis (shift direction and magnitude)
+    - Party continuity tracking (same party reelection)
     - Mandate sequence counting
     - Competition level classification
+    - Electoral statistics (votes, candidates, rounds)
 */
 
 -- Get election winners (prefer 2nd round if exists)
@@ -107,7 +108,6 @@ mandatos_com_historico as (
     from mandatos_base m
 ),
 
--- Join with party dimension for ideology
 final as (
     select
         -- Surrogate Key
@@ -115,8 +115,6 @@ final as (
 
         -- Foreign Keys
         {{ dbt_utils.generate_surrogate_key(['m.id_municipio']) }} as sk_municipio,
-        p.sk_partido,
-        p_ant.sk_partido as sk_partido_anterior,
 
         -- Natural Keys
         m.id_municipio,
@@ -150,21 +148,11 @@ final as (
             else 'Alta'
         end as nivel_competicao,
 
-        -- Party Ideology (current mandate)
-        p.nome_partido,
-        p.espectro_ideologico,
-        p.bloco_ideologico,
-        p.score_ideologico,
-        p.is_big_tent as is_partido_big_tent,
-        p.intensidade_ideologica,
-
         -- Previous Mandate Info
         m.partido_mandato_anterior,
-        p_ant.espectro_ideologico as espectro_anterior,
-        p_ant.bloco_ideologico as bloco_anterior,
-        p_ant.score_ideologico as score_anterior,
+        m.eleicao_anterior,
 
-        -- Political Continuity
+        -- Political Continuity (same party, consecutive election)
         case
             when m.partido_vencedor = m.partido_mandato_anterior
                 and m.eleicao_anterior = m.ano_eleicao - 4
@@ -172,34 +160,12 @@ final as (
             else false
         end as is_continuidade_partidaria,
 
+        -- Party changed flag
         case
-            when p.bloco_ideologico = p_ant.bloco_ideologico then true
+            when m.partido_mandato_anterior is null then null
+            when m.partido_vencedor != m.partido_mandato_anterior then true
             else false
-        end as is_continuidade_bloco,
-
-        -- Ideological Change
-        coalesce(p.score_ideologico, 0) - coalesce(p_ant.score_ideologico, 0) as delta_ideologico,
-
-        case
-            when p.score_ideologico is null or p_ant.score_ideologico is null
-                then 'Primeiro Mandato ou Dados Incompletos'
-            when p.score_ideologico - p_ant.score_ideologico >= 2
-                then 'Guinada para Direita'
-            when p.score_ideologico - p_ant.score_ideologico <= -2
-                then 'Guinada para Esquerda'
-            when p.score_ideologico - p_ant.score_ideologico >= 1
-                then 'Mudanca Moderada para Direita'
-            when p.score_ideologico - p_ant.score_ideologico <= -1
-                then 'Mudanca Moderada para Esquerda'
-            else 'Estabilidade Ideologica'
-        end as tipo_transicao_ideologica,
-
-        case
-            when p.score_ideologico is null or p_ant.score_ideologico is null then null
-            when p.score_ideologico > p_ant.score_ideologico then 'direita'
-            when p.score_ideologico < p_ant.score_ideologico then 'esquerda'
-            else 'neutro'
-        end as direcao_mudanca_ideologica,
+        end as is_mudanca_partido,
 
         -- Party Sequence (consecutive mandates for same party)
         sum(case when m.partido_vencedor = m.partido_mandato_anterior then 0 else 1 end) over (
@@ -212,14 +178,6 @@ final as (
         current_timestamp as _loaded_at
 
     from mandatos_com_historico m
-
-    -- Current party ideology
-    left join {{ ref('dim_partido') }} p
-        on m.partido_vencedor = p.sigla_partido
-
-    -- Previous party ideology
-    left join {{ ref('dim_partido') }} p_ant
-        on m.partido_mandato_anterior = p_ant.sigla_partido
 )
 
 select * from final

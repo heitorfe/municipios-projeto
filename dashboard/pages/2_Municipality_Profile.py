@@ -22,6 +22,9 @@ from dashboard.data.queries import (
     get_electoral_summary,
     get_financial_summary,
     get_state_summary,
+    get_municipality_fiscal_profile,
+    get_dependency_trend,
+    get_mandate_history,
     WAREHOUSE_PATH,
 )
 
@@ -323,6 +326,122 @@ def main() -> None:
         st.write(f"Código TSE: `{profile.get('id_municipio_tse', 'N/A')}`")
         if profile.get("ddd"):
             st.write(f"DDD: `{profile.get('ddd')}`")
+
+    st.markdown("---")
+
+    # ==========================================================================
+    # FISCAL PROFILE SECTION
+    # ==========================================================================
+    st.subheader("💰 Perfil Fiscal")
+
+    try:
+        fiscal_profile = get_municipality_fiscal_profile(selected_municipio)
+
+        if fiscal_profile and fiscal_profile.get("dependency_ratio") is not None:
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                dep_ratio = fiscal_profile.get("dependency_ratio")
+                st.metric(
+                    "Dependência Federal",
+                    f"{dep_ratio:.1f}%" if dep_ratio else "N/A",
+                    help=fiscal_profile.get("categoria_dependencia", "")
+                )
+                if fiscal_profile.get("categoria_dependencia"):
+                    st.caption(fiscal_profile.get("categoria_dependencia"))
+
+            with col2:
+                eff_idx = fiscal_profile.get("efficiency_index")
+                st.metric(
+                    "Índice de Eficiência",
+                    f"{eff_idx:.1f}" if eff_idx else "N/A",
+                    help=fiscal_profile.get("categoria_eficiencia", "")
+                )
+                if fiscal_profile.get("categoria_eficiencia"):
+                    st.caption(fiscal_profile.get("categoria_eficiencia"))
+
+            with col3:
+                receita_propria = fiscal_profile.get("receita_propria_per_capita")
+                st.metric(
+                    "Receita Própria/Capita",
+                    format_currency(receita_propria) if receita_propria else "N/A",
+                    help="Receita gerada pelo próprio município"
+                )
+
+            with col4:
+                partido = fiscal_profile.get("partido_vencedor", "N/A")
+                ano_eleicao = fiscal_profile.get("ano_eleicao")
+                st.metric(
+                    "Prefeito (Partido)",
+                    partido,
+                    help=f"Eleito em {ano_eleicao}" if ano_eleicao else ""
+                )
+
+            # Transfer breakdown
+            st.markdown("**Composição das Transferências Federais:**")
+            col_t1, col_t2, col_t3 = st.columns(3)
+
+            with col_t1:
+                fpm = fiscal_profile.get("fpm_value")
+                st.write(f"FPM: **{format_currency(fpm)}**" if fpm else "FPM: N/A")
+            with col_t2:
+                fundeb = fiscal_profile.get("fundeb_value")
+                st.write(f"FUNDEB: **{format_currency(fundeb)}**" if fundeb else "FUNDEB: N/A")
+            with col_t3:
+                sus = fiscal_profile.get("sus_transfers")
+                st.write(f"SUS: **{format_currency(sus)}**" if sus else "SUS: N/A")
+
+            # Dependency trend chart
+            trend_data = get_dependency_trend(selected_municipio)
+            if not trend_data.is_empty():
+                st.markdown("**Evolução da Dependência Fiscal:**")
+                fig = px.line(
+                    trend_data.to_pandas(),
+                    x="ano",
+                    y=["dependency_ratio", "own_revenue_ratio"],
+                    markers=True,
+                    labels={
+                        "ano": "Ano",
+                        "value": "Percentual (%)",
+                        "variable": "Métrica"
+                    }
+                )
+                newnames = {
+                    "dependency_ratio": "Dependência Federal",
+                    "own_revenue_ratio": "Receita Própria"
+                }
+                fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
+                fig.update_layout(
+                    yaxis_range=[0, 100],
+                    height=350,
+                    margin=dict(l=20, r=20, t=20, b=20),
+                    legend_title="Métrica"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Mandate history
+            mandate_data = get_mandate_history(selected_municipio)
+            if not mandate_data.is_empty():
+                st.markdown("**Histórico de Mandatos:**")
+                st.dataframe(
+                    mandate_data.to_pandas(),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "ano_eleicao": "Eleição",
+                        "periodo_mandato": "Mandato",
+                        "partido_vencedor": "Partido",
+                        "percentual_vencedor": st.column_config.NumberColumn("Votação %", format="%.1f"),
+                        "nivel_competicao": "Competição",
+                        "is_continuidade_partidaria": st.column_config.CheckboxColumn("Reeleição"),
+                        "total_candidatos": "Candidatos"
+                    }
+                )
+        else:
+            st.info("Dados fiscais não disponíveis para este município. Execute `dbt build` para gerar os modelos fiscais.")
+
+    except Exception as e:
+        st.info(f"Dados fiscais não disponíveis para este município.")
 
     st.markdown("---")
 

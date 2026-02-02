@@ -1,0 +1,92 @@
+version: 2
+
+models:
+  - name: mart_dependencia_fiscal
+    description: |
+      Fiscal dependency analysis mart tracking how reliant municipalities are
+      on federal transfers versus own-source revenue.
+
+      Key metrics include dependency ratio, own revenue ratio, and revenue effort index.
+      Categories classify municipalities from 'Autonomo' to 'Extremamente Dependente'.
+
+      Grain: One row per municipality per year
+    columns:
+      - name: id_municipio
+        description: "IBGE municipality code (7 digits)"
+        tests:
+          - not_null
+      - name: ano
+        description: "Fiscal year"
+        tests:
+          - not_null
+      - name: dependency_ratio
+        description: "Federal transfers as percentage of total revenue (0-100)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              config:
+                where: "dependency_ratio is not null"
+      - name: own_revenue_ratio
+        description: "Own-source revenue as percentage of total (0-100)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              config:
+                where: "own_revenue_ratio is not null"
+      - name: revenue_effort_index
+        description: "Own revenue per capita relative to national median (>1 = above average)"
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              config:
+                where: "revenue_effort_index is not null"
+
+  - name: mart_eficiencia_municipal
+    description: |
+      Municipal efficiency index measuring how effectively municipalities convert
+      spending into social outcomes.
+
+      Methodology:
+      1. Normalize spending (per capita) and social indicators per year
+      2. social_outcome = 0.4*IDHM + 0.3*IVS(inverted) + 0.3*Gini(inverted)
+      3. efficiency = outcome / (spending + 0.1)
+      4. Apply fiscal balance modifier (±10 points)
+
+      Note: Social indicators use 2010 census values as baseline.
+
+      Grain: One row per municipality per year
+    columns:
+      - name: id_municipio
+        description: "IBGE municipality code (7 digits)"
+        tests:
+          - not_null
+      - name: ano
+        description: "Fiscal year"
+        tests:
+          - not_null
+      - name: efficiency_index
+        description: "Composite efficiency score (0-100)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              config:
+                where: "efficiency_index is not null"
+      - name: social_outcome_score
+        description: "Weighted social indicators score (0-100)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+              config:
+                where: "social_outcome_score is not null"
+      - name: ranking_eficiencia_nacional
+        description: "National ranking by efficiency (1 = most efficient)"
+        tests:
+          - not_null

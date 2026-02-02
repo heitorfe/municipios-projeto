@@ -15,6 +15,12 @@
 
     Note: Values are in BRL (Brazilian Reais) at nominal prices.
     Consider inflation adjustment for time-series analysis.
+
+    Per-capita metrics included for cross-municipality comparison:
+    - despesa_total_per_capita: Average spending per inhabitant
+    - receita_total_per_capita: Total revenue per inhabitant
+    - receita_propria_per_capita: Own revenue (non-transfer) per inhabitant
+    - saldo_fiscal_per_capita: Fiscal balance per inhabitant
 */
 
 with despesas as (
@@ -53,6 +59,22 @@ calendario as (
         sk_ano,
         ano
     from {{ ref('dim_calendario') }}
+),
+
+populacao as (
+    select
+        id_municipio,
+        ano,
+        populacao
+    from {{ ref('stg_populacao') }}
+),
+
+-- Get latest population as fallback for municipalities without year-specific data
+populacao_fallback as (
+    select
+        id_municipio_ibge as id_municipio,
+        populacao
+    from {{ ref('dim_municipio') }}
 ),
 
 combined as (
@@ -109,12 +131,39 @@ final as (
             else null
         end as taxa_execucao_percentual,
 
+        -- Population (use year-specific or fallback to latest)
+        coalesce(p.populacao, pf.populacao) as populacao,
+
+        -- ============================================================
+        -- PER-CAPITA METRICS (for cross-municipality comparison)
+        -- ============================================================
+
+        -- Total spending per capita (average of execution stages)
+        case
+            when coalesce(p.populacao, pf.populacao) > 0
+            then round(cb.despesa_paga / coalesce(p.populacao, pf.populacao), 2)
+        end as despesa_total_per_capita,
+
+        -- Total revenue per capita (net of deductions)
+        case
+            when coalesce(p.populacao, pf.populacao) > 0
+            then round((cb.receita_bruta - cb.deducoes) / coalesce(p.populacao, pf.populacao), 2)
+        end as receita_total_per_capita,
+
+        -- Fiscal balance per capita
+        case
+            when coalesce(p.populacao, pf.populacao) > 0
+            then round((cb.receita_bruta - cb.deducoes - cb.despesa_paga) / coalesce(p.populacao, pf.populacao), 2)
+        end as saldo_fiscal_per_capita,
+
         -- Metadata
         current_timestamp as _loaded_at
 
     from combined cb
     inner join municipios m on cb.id_municipio = m.id_municipio_ibge
     inner join calendario c on cb.ano = c.ano
+    left join populacao p on cb.id_municipio = p.id_municipio and cb.ano = p.ano
+    left join populacao_fallback pf on cb.id_municipio = pf.id_municipio
 )
 
 select * from final

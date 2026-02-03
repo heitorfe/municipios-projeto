@@ -36,7 +36,6 @@ with eleicoes_raw as (
     select * from {{ ref('stg_eleicoes') }}
     where cargo = 'prefeito'
 ),
-
 eleicoes_vencedores as (
     select
         id_municipio,
@@ -44,6 +43,8 @@ eleicoes_vencedores as (
         sigla_partido as partido_vencedor,
         votos as votos_vencedor,
         turno,
+        nome_candidato,
+        nome_urna_candidato,
         row_number() over (
             partition by id_municipio, ano
             order by turno desc, votos desc
@@ -80,6 +81,8 @@ mandatos_base as (
             cast(e.ano_eleicao + 1 as varchar), '-',
             cast(e.ano_eleicao + 4 as varchar)
         ) as periodo_mandato,
+        e.nome_candidato,
+        e.nome_urna_candidato,
         e.partido_vencedor,
         e.votos_vencedor,
         e.turno as turno_eleicao,
@@ -119,6 +122,10 @@ final as (
         -- Natural Keys
         m.id_municipio,
         m.ano_eleicao,
+
+        --Candidate info
+        m.nome_candidato,
+        m.nome_urna_candidato,
 
         -- Mandate Period
         m.periodo_mandato,

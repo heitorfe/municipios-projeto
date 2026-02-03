@@ -16,6 +16,7 @@ from data.queries import (
     get_fiscal_comparison_by_region,
     get_transfer_breakdown,
     get_regions,
+    get_states,
 )
 
 # Page config
@@ -44,6 +45,9 @@ REGION_COLORS = {
 st.sidebar.header("Filtros")
 regions = ["All"] + get_regions()
 selected_region = st.sidebar.selectbox("Regiao", regions, index=0)
+
+states = ["All"] + get_states()
+selected_uf = st.sidebar.selectbox("Estado (UF)", states, index=0)
 
 year_options = list(range(2023, 2012, -1))
 selected_year = st.sidebar.selectbox("Ano", year_options, index=0)
@@ -166,7 +170,7 @@ Municipios no quadrante superior esquerdo sao os mais desejados: baixa dependenc
 """)
 
 try:
-    scatter_data = get_dependency_vs_efficiency(year=selected_year, region=selected_region)
+    scatter_data = get_dependency_vs_efficiency(year=selected_year, region=selected_region, uf=selected_uf)
 
     if not scatter_data.is_empty():
         df = scatter_data.to_pandas()
@@ -229,7 +233,8 @@ with tab_dep:
                 year=selected_year,
                 limit=20,
                 ascending=True,
-                region=selected_region
+                region=selected_region,
+                uf=selected_uf
             )
 
             if not least_dependent.is_empty():
@@ -256,7 +261,8 @@ with tab_dep:
                 year=selected_year,
                 limit=20,
                 ascending=False,
-                region=selected_region
+                region=selected_region,
+                uf=selected_uf
             )
 
             if not most_dependent.is_empty():
@@ -285,7 +291,8 @@ with tab_eff:
             most_efficient = get_efficiency_rankings(
                 year=selected_year,
                 limit=20,
-                region=selected_region
+                region=selected_region,
+                uf=selected_uf
             )
 
             if not most_efficient.is_empty():
@@ -313,7 +320,8 @@ with tab_eff:
             all_efficiency = get_efficiency_rankings(
                 year=selected_year,
                 limit=1000,
-                region=selected_region
+                region=selected_region,
+                uf=selected_uf
             )
 
             if not all_efficiency.is_empty():
@@ -341,7 +349,7 @@ with tab_eff:
 st.header("💵 Composicao das Transferencias Federais")
 
 try:
-    transfer_data = get_transfer_breakdown(year=selected_year, region=selected_region)
+    transfer_data = get_transfer_breakdown(year=selected_year, region=selected_region, uf=selected_uf)
 
     if not transfer_data.is_empty():
         df = transfer_data.to_pandas()

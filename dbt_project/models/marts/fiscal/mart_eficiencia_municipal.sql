@@ -12,18 +12,23 @@
 
     Grain: One row per municipality per year
 
-    Methodology:
-    1. Normalize indicators (min-max per year)
-    2. social_outcome_score = 0.4 * idhm_norm + 0.3 * ivs_adj + 0.3 * gini_adj
-    3. efficiency_index = social_outcome_score / (spend_norm + 0.1)
-    4. Rescale to 0-100
-    5. Optional fiscal balance modifier (±10 points)
+    Methodology (Percentile-Based Efficiency):
+    1. Compute social_outcome_score = 0.4 * idhm + 0.3 * (1-ivs) + 0.3 * (1-gini)
+    2. Compute outcome_percentile = percentile rank of social_outcome (0-100)
+    3. Compute spending_percentile = percentile rank of spending per capita (0-100)
+    4. efficiency_index = outcome_percentile - spending_percentile + 50
+
+    Interpretation:
+    - Score > 50: Getting better outcomes than spending level suggests (efficient)
+    - Score = 50: Average efficiency for spending level
+    - Score < 50: Getting worse outcomes than spending level suggests (inefficient)
+
+    Fiscal Modifier (±5 points):
+    - Rewards municipalities with fiscal surpluses
+    - Penalizes those with deficits
 
     Key limitation: IDHM/IVS/Gini only available for census years (2000, 2010)
     Solution: Use 2010 values as baseline for all years 2013-2024
-
-    Future enhancement: When 2022 census data becomes available, implement
-    interpolation for more accurate year-over-year efficiency tracking.
 
     Use cases:
     - Rank municipalities by efficiency in converting spending to outcomes
@@ -71,33 +76,7 @@ municipios as (
     from {{ ref('dim_municipio') }}
 ),
 
--- Calculate min/max per year for normalization
--- This ensures fair comparison within each year (controls for inflation)
-normalization_params as (
-    select
-        f.ano,
-
-        -- Spending normalization bounds
-        min(f.despesa_total_per_capita) as min_despesa_pc,
-        max(f.despesa_total_per_capita) as max_despesa_pc,
-        percentile_cont(0.05) within group (order by f.despesa_total_per_capita) as p5_despesa_pc,
-        percentile_cont(0.95) within group (order by f.despesa_total_per_capita) as p95_despesa_pc,
-
-        -- Social indicator bounds (from 2010 census, constant across years)
-        min(s.idhm) as min_idhm,
-        max(s.idhm) as max_idhm,
-        min(s.ivs) as min_ivs,
-        max(s.ivs) as max_ivs,
-        min(s.indice_gini) as min_gini,
-        max(s.indice_gini) as max_gini
-
-    from financas f
-    inner join indicadores_sociais s on f.id_municipio = s.id_municipio
-    where f.despesa_total_per_capita is not null
-      and s.idhm is not null
-    group by f.ano
-),
-
+-- Combine base data for analysis
 combined as (
     select
         -- Keys
@@ -127,58 +106,41 @@ combined as (
         s.ivs,
         s.indice_gini,
 
-        -- Normalization parameters
-        np.min_despesa_pc, np.max_despesa_pc,
-        np.p5_despesa_pc, np.p95_despesa_pc,
-        np.min_idhm, np.max_idhm,
-        np.min_ivs, np.max_ivs,
-        np.min_gini, np.max_gini
+        -- ============================================================
+        -- COMPOSITE SOCIAL OUTCOME SCORE (0-1 scale)
+        -- ============================================================
+        -- Weighted: 40% IDHM (higher=better), 30% IVS (inverted), 30% Gini (inverted)
+        -- IVS and Gini are subtracted from 1 because lower values are better
+        round(
+            0.4 * s.idhm +
+            0.3 * (1.0 - coalesce(s.ivs, 0.5)) +
+            0.3 * (1.0 - coalesce(s.indice_gini, 0.5)),
+            4
+        ) as social_outcome_raw
 
     from financas f
     inner join municipios m on f.id_municipio = m.id_municipio
     inner join indicadores_sociais s on f.id_municipio = s.id_municipio
-    inner join normalization_params np on f.ano = np.ano
+    where f.despesa_total_per_capita is not null
+      and s.idhm is not null
 ),
 
-normalized as (
+-- Calculate percentile ranks for each municipality per year
+percentile_calc as (
     select
         *,
 
-        -- ============================================================
-        -- NORMALIZED SCORES (0-1 scale)
-        -- ============================================================
+        -- Outcome percentile (0-100): higher = better social outcomes
+        round(
+            percent_rank() over (partition by ano order by social_outcome_raw) * 100,
+            2
+        ) as outcome_percentile,
 
-        -- Normalized spending (0-1, using robust min-max with percentile bounds)
-        -- Higher value = higher spending per capita
-        case
-            when p95_despesa_pc > p5_despesa_pc then
-                least(1.0, greatest(0.0,
-                    (despesa_total_per_capita - p5_despesa_pc) /
-                    (p95_despesa_pc - p5_despesa_pc)
-                ))
-            else 0.5
-        end as spend_norm,
-
-        -- Normalized IDHM (0-1, higher = better)
-        case
-            when max_idhm > min_idhm then
-                (idhm - min_idhm) / (max_idhm - min_idhm)
-            else 0.5
-        end as idhm_norm,
-
-        -- Adjusted IVS (0-1, INVERTED: lower IVS = lower vulnerability = better)
-        case
-            when max_ivs > min_ivs then
-                1.0 - ((ivs - min_ivs) / (max_ivs - min_ivs))
-            else 0.5
-        end as ivs_adj,
-
-        -- Adjusted Gini (0-1, INVERTED: lower Gini = less inequality = better)
-        case
-            when max_gini > min_gini then
-                1.0 - ((indice_gini - min_gini) / (max_gini - min_gini))
-            else 0.5
-        end as gini_adj
+        -- Spending percentile (0-100): higher = higher spending per capita
+        round(
+            percent_rank() over (partition by ano order by despesa_total_per_capita) * 100,
+            2
+        ) as spending_percentile
 
     from combined
 ),
@@ -188,28 +150,29 @@ efficiency_calc as (
         *,
 
         -- ============================================================
-        -- COMPOSITE SOCIAL OUTCOME SCORE
+        -- EFFICIENCY INDEX (Percentile-Based)
         -- ============================================================
-        -- Weighted average: 40% IDHM, 30% IVS, 30% Gini
-        -- This captures human development, social vulnerability, and inequality
+        -- Formula: outcome_percentile - spending_percentile + 50
+        -- Interpretation:
+        --   > 50: Better outcomes than spending level suggests
+        --   = 50: Average efficiency for spending level
+        --   < 50: Worse outcomes than spending level suggests
         round(
-            0.4 * idhm_norm + 0.3 * ivs_adj + 0.3 * gini_adj,
-            4
-        ) as social_outcome_score,
+            outcome_percentile - spending_percentile + 50,
+            2
+        ) as efficiency_raw,
 
-        -- ============================================================
-        -- BASE EFFICIENCY RATIO
-        -- ============================================================
-        -- Outcome per unit of input (normalized)
-        -- Adding 0.1 to denominator prevents division by zero and
-        -- avoids extreme values for very low spenders
-        round(
-            (0.4 * idhm_norm + 0.3 * ivs_adj + 0.3 * gini_adj) /
-            (spend_norm + 0.1),
-            4
-        ) as efficiency_ratio
+        -- Fiscal modifier: rewards/penalizes fiscal responsibility (±5 points)
+        case
+            when saldo_fiscal_per_capita > 300 then 5
+            when saldo_fiscal_per_capita > 100 then 3
+            when saldo_fiscal_per_capita > 0 then 1
+            when saldo_fiscal_per_capita > -100 then -1
+            when saldo_fiscal_per_capita > -300 then -3
+            else -5
+        end as fiscal_modifier
 
-    from normalized
+    from percentile_calc
 ),
 
 final as (
@@ -242,60 +205,36 @@ final as (
         indice_gini,
 
         -- ============================================================
-        -- NORMALIZED SCORES (as percentages for readability)
+        -- PERCENTILE SCORES (for transparency)
         -- ============================================================
-        round(spend_norm * 100, 2) as spend_score,
-        round(idhm_norm * 100, 2) as idhm_score,
-        round(ivs_adj * 100, 2) as ivs_score,
-        round(gini_adj * 100, 2) as gini_score,
+        outcome_percentile,
+        spending_percentile as spend_score,
 
-        -- Composite outcome score (0-100)
-        round(social_outcome_score * 100, 2) as social_outcome_score,
-
-        -- Base efficiency ratio
-        efficiency_ratio,
+        -- Composite outcome score (scaled to 0-100 for display)
+        round(social_outcome_raw * 100, 2) as social_outcome_score,
 
         -- ============================================================
-        -- EFFICIENCY INDEX (0-100 scale)
+        -- EFFICIENCY INDEX (0-100 scale, centered at 50)
         -- ============================================================
 
-        -- Raw efficiency index (scaled to approximately 0-100)
+        -- Raw efficiency index (before fiscal modifier)
+        efficiency_raw as efficiency_index_raw,
+
+        -- Fiscal balance modifier
+        fiscal_modifier,
+
+        -- Final efficiency index with fiscal modifier (capped 0-100)
         round(
-            least(100.0, greatest(0.0, efficiency_ratio * 50))
-        , 2) as efficiency_index_raw,
-
-        -- Fiscal balance modifier (rewards fiscal responsibility)
-        case
-            when saldo_fiscal_per_capita > 500 then 10
-            when saldo_fiscal_per_capita > 200 then 5
-            when saldo_fiscal_per_capita > 0 then 2
-            when saldo_fiscal_per_capita > -200 then -2
-            when saldo_fiscal_per_capita > -500 then -5
-            else -10
-        end as fiscal_modifier,
-
-        -- Final efficiency index with fiscal modifier
-        round(
-            least(100.0, greatest(0.0,
-                efficiency_ratio * 50 +
-                case
-                    when saldo_fiscal_per_capita > 500 then 10
-                    when saldo_fiscal_per_capita > 200 then 5
-                    when saldo_fiscal_per_capita > 0 then 2
-                    when saldo_fiscal_per_capita > -200 then -2
-                    when saldo_fiscal_per_capita > -500 then -5
-                    else -10
-                end
-            ))
+            least(100.0, greatest(0.0, efficiency_raw + fiscal_modifier))
         , 2) as efficiency_index,
 
         -- ============================================================
         -- EFFICIENCY CATEGORIES
         -- ============================================================
         case
-            when efficiency_ratio * 50 >= 70 then 'Alta Eficiencia'
-            when efficiency_ratio * 50 >= 50 then 'Eficiencia Moderada'
-            when efficiency_ratio * 50 >= 30 then 'Baixa Eficiencia'
+            when efficiency_raw + fiscal_modifier >= 65 then 'Alta Eficiencia'
+            when efficiency_raw + fiscal_modifier >= 50 then 'Eficiencia Moderada'
+            when efficiency_raw + fiscal_modifier >= 35 then 'Baixa Eficiencia'
             else 'Ineficiente'
         end as categoria_eficiencia,
 
@@ -306,44 +245,44 @@ final as (
         -- National ranking by efficiency (higher = better)
         rank() over (
             partition by ano
-            order by efficiency_ratio desc nulls last
+            order by (efficiency_raw + fiscal_modifier) desc nulls last
         ) as ranking_eficiencia_nacional,
 
         -- State ranking by efficiency
         rank() over (
             partition by ano, sigla_uf
-            order by efficiency_ratio desc nulls last
+            order by (efficiency_raw + fiscal_modifier) desc nulls last
         ) as ranking_eficiencia_uf,
 
         -- Regional ranking
         rank() over (
             partition by ano, regiao
-            order by efficiency_ratio desc nulls last
+            order by (efficiency_raw + fiscal_modifier) desc nulls last
         ) as ranking_eficiencia_regiao,
 
         -- Size category ranking
         rank() over (
             partition by ano, porte_municipio
-            order by efficiency_ratio desc nulls last
+            order by (efficiency_raw + fiscal_modifier) desc nulls last
         ) as ranking_eficiencia_porte,
 
-        -- Percentile within year
+        -- Percentile within year (for efficiency index)
         percent_rank() over (
             partition by ano
-            order by efficiency_ratio
+            order by (efficiency_raw + fiscal_modifier)
         ) as percentile_eficiencia,
 
         -- ============================================================
         -- YEAR-OVER-YEAR COMPARISON
         -- ============================================================
 
-        lag(efficiency_ratio) over (
+        lag(efficiency_raw + fiscal_modifier) over (
             partition by id_municipio order by ano
-        ) as efficiency_ratio_ano_anterior,
+        ) as efficiency_index_ano_anterior,
 
-        efficiency_ratio - lag(efficiency_ratio) over (
+        (efficiency_raw + fiscal_modifier) - lag(efficiency_raw + fiscal_modifier) over (
             partition by id_municipio order by ano
-        ) as delta_efficiency_ratio,
+        ) as delta_efficiency_index,
 
         -- Metadata
         current_timestamp as _loaded_at

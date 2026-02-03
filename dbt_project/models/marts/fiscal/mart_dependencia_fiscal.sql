@@ -324,4 +324,5 @@ final as (
 )
 
 select * from final
+where dependency_ratio <= 100
 order by ano desc, id_municipio

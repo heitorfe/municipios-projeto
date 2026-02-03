@@ -19,9 +19,6 @@ from dashboard.data.queries import (
     search_municipalities,
     get_municipality_profile,
     get_municipality_indicators_history,
-    get_electoral_summary,
-    get_financial_summary,
-    get_state_summary,
     get_municipality_fiscal_profile,
     get_dependency_trend,
     get_mandate_history,
@@ -369,13 +366,16 @@ def main() -> None:
                 )
 
             with col4:
-                partido = fiscal_profile.get("partido_vencedor", "N/A")
+                nome_prefeito = fiscal_profile.get("nome_urna_candidato") or fiscal_profile.get("nome_candidato", "N/A")
+                partido = fiscal_profile.get("partido_vencedor", "")
                 ano_eleicao = fiscal_profile.get("ano_eleicao")
                 st.metric(
-                    "Prefeito (Partido)",
-                    partido,
-                    help=f"Eleito em {ano_eleicao}" if ano_eleicao else ""
+                    "Prefeito Atual",
+                    nome_prefeito,
+                    help=f"{partido} - Eleito em {ano_eleicao}" if ano_eleicao else ""
                 )
+                if partido:
+                    st.caption(f"Partido: {partido}")
 
             # Transfer breakdown
             st.markdown("**Composição das Transferências Federais:**")
@@ -391,7 +391,10 @@ def main() -> None:
                 sus = fiscal_profile.get("sus_transfers")
                 st.write(f"SUS: **{format_currency(sus)}**" if sus else "SUS: N/A")
 
-            # Dependency trend chart
+            # Get mandate history first (needed for chart shading and table)
+            mandate_data = get_mandate_history(selected_municipio)
+
+            # Dependency trend chart with mayor term shading
             trend_data = get_dependency_trend(selected_municipio)
             if not trend_data.is_empty():
                 st.markdown("**Evolução da Dependência Fiscal:**")
@@ -411,16 +414,40 @@ def main() -> None:
                     "own_revenue_ratio": "Receita Própria"
                 }
                 fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
+
+                # Add background shading for each mayor's term
+                if not mandate_data.is_empty():
+                    mandate_df = mandate_data.to_pandas()
+                    # Color palette for alternating mayors
+                    colors = ["rgba(52, 152, 219, 0.15)", "rgba(46, 204, 113, 0.15)",
+                              "rgba(155, 89, 182, 0.15)", "rgba(241, 196, 15, 0.15)",
+                              "rgba(231, 76, 60, 0.15)", "rgba(26, 188, 156, 0.15)"]
+                    for idx, row in mandate_df.iterrows():
+                        ano_inicio = row.get("ano_eleicao", 0) + 1
+                        ano_fim = ano_inicio + 3
+                        prefeito = row.get("nome_urna_candidato") or row.get("nome_candidato", "")
+                        partido = row.get("partido_vencedor", "")
+                        color = colors[idx % len(colors)]
+                        fig.add_vrect(
+                            x0=ano_inicio - 0.5, x1=ano_fim + 0.5,
+                            fillcolor=color,
+                            layer="below",
+                            line_width=0,
+                            annotation_text=f"{prefeito[:15]}..." if len(prefeito) > 15 else prefeito,
+                            annotation_position="top left",
+                            annotation_font_size=9,
+                            annotation_font_color="gray"
+                        )
+
                 fig.update_layout(
                     yaxis_range=[0, 100],
-                    height=350,
-                    margin=dict(l=20, r=20, t=20, b=20),
+                    height=400,
+                    margin=dict(l=20, r=20, t=40, b=20),
                     legend_title="Métrica"
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-            # Mandate history
-            mandate_data = get_mandate_history(selected_municipio)
+            # Mandate history table
             if not mandate_data.is_empty():
                 st.markdown("**Histórico de Mandatos:**")
                 st.dataframe(
@@ -430,6 +457,8 @@ def main() -> None:
                     column_config={
                         "ano_eleicao": "Eleição",
                         "periodo_mandato": "Mandato",
+                        "nome_urna_candidato": "Prefeito",
+                        "nome_candidato": None,  # Hide full name (redundant)
                         "partido_vencedor": "Partido",
                         "percentual_vencedor": st.column_config.NumberColumn("Votação %", format="%.1f"),
                         "nivel_competicao": "Competição",

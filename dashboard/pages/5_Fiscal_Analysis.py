@@ -18,6 +18,7 @@ from data.queries import (
     get_regions,
     get_states,
 )
+from components.navigation import render_clickable_ranking_table
 
 # Page config
 st.set_page_config(
@@ -228,6 +229,7 @@ with tab_dep:
 
     with col1:
         st.subheader("🟢 Mais Autonomos")
+        st.caption("Clique em uma linha para ver o perfil do municipio")
         try:
             least_dependent = get_dependency_rankings(
                 year=selected_year,
@@ -239,23 +241,25 @@ with tab_dep:
 
             if not least_dependent.is_empty():
                 df = least_dependent.to_pandas()
-                st.dataframe(
-                    df[["ranking", "nome_municipio", "sigla_uf", "dependency_ratio", "categoria_dependencia"]],
-                    use_container_width=True,
-                    hide_index=True,
+                render_clickable_ranking_table(
+                    df=df,
+                    display_columns=["ranking", "nome_municipio", "sigla_uf", "dependency_ratio", "categoria_dependencia"],
                     column_config={
                         "ranking": "Pos",
                         "nome_municipio": "Municipio",
                         "sigla_uf": "UF",
                         "dependency_ratio": st.column_config.NumberColumn("Dependencia %", format="%.1f"),
                         "categoria_dependencia": "Categoria"
-                    }
+                    },
+                    key="least_dependent_table",
+                    height=400,
                 )
         except Exception:
             st.info("Dados nao disponiveis.")
 
     with col2:
         st.subheader("🔴 Mais Dependentes")
+        st.caption("Clique em uma linha para ver o perfil do municipio")
         try:
             most_dependent = get_dependency_rankings(
                 year=selected_year,
@@ -267,17 +271,18 @@ with tab_dep:
 
             if not most_dependent.is_empty():
                 df = most_dependent.to_pandas()
-                st.dataframe(
-                    df[["ranking", "nome_municipio", "sigla_uf", "dependency_ratio", "categoria_dependencia"]],
-                    use_container_width=True,
-                    hide_index=True,
+                render_clickable_ranking_table(
+                    df=df,
+                    display_columns=["ranking", "nome_municipio", "sigla_uf", "dependency_ratio", "categoria_dependencia"],
                     column_config={
                         "ranking": "Pos",
                         "nome_municipio": "Municipio",
                         "sigla_uf": "UF",
                         "dependency_ratio": st.column_config.NumberColumn("Dependencia %", format="%.1f"),
                         "categoria_dependencia": "Categoria"
-                    }
+                    },
+                    key="most_dependent_table",
+                    height=400,
                 )
         except Exception:
             st.info("Dados nao disponiveis.")
@@ -287,6 +292,7 @@ with tab_eff:
 
     with col1:
         st.subheader("🏆 Mais Eficientes")
+        st.caption("Clique em uma linha para ver o perfil do municipio")
         try:
             most_efficient = get_efficiency_rankings(
                 year=selected_year,
@@ -297,10 +303,9 @@ with tab_eff:
 
             if not most_efficient.is_empty():
                 df = most_efficient.to_pandas()
-                st.dataframe(
-                    df[["ranking", "nome_municipio", "sigla_uf", "efficiency_index", "social_outcome_score", "categoria_eficiencia"]],
-                    use_container_width=True,
-                    hide_index=True,
+                render_clickable_ranking_table(
+                    df=df,
+                    display_columns=["ranking", "nome_municipio", "sigla_uf", "efficiency_index", "social_outcome_score", "categoria_eficiencia"],
                     column_config={
                         "ranking": "Pos",
                         "nome_municipio": "Municipio",
@@ -308,13 +313,16 @@ with tab_eff:
                         "efficiency_index": st.column_config.NumberColumn("Eficiencia", format="%.1f"),
                         "social_outcome_score": st.column_config.NumberColumn("Score Social", format="%.1f"),
                         "categoria_eficiencia": "Categoria"
-                    }
+                    },
+                    key="most_efficient_table",
+                    height=400,
                 )
         except Exception:
             st.info("Dados nao disponiveis.")
 
     with col2:
         st.subheader("📉 Menos Eficientes")
+        st.caption("Clique em uma linha para ver o perfil do municipio")
         try:
             # Get all efficiency data and sort ascending
             all_efficiency = get_efficiency_rankings(
@@ -327,10 +335,9 @@ with tab_eff:
             if not all_efficiency.is_empty():
                 df = all_efficiency.to_pandas().sort_values("efficiency_index", ascending=True).head(20)
                 df["ranking"] = range(1, len(df) + 1)
-                st.dataframe(
-                    df[["ranking", "nome_municipio", "sigla_uf", "efficiency_index", "social_outcome_score", "categoria_eficiencia"]],
-                    use_container_width=True,
-                    hide_index=True,
+                render_clickable_ranking_table(
+                    df=df,
+                    display_columns=["ranking", "nome_municipio", "sigla_uf", "efficiency_index", "social_outcome_score", "categoria_eficiencia"],
                     column_config={
                         "ranking": "Pos",
                         "nome_municipio": "Municipio",
@@ -338,7 +345,9 @@ with tab_eff:
                         "efficiency_index": st.column_config.NumberColumn("Eficiencia", format="%.1f"),
                         "social_outcome_score": st.column_config.NumberColumn("Score Social", format="%.1f"),
                         "categoria_eficiencia": "Categoria"
-                    }
+                    },
+                    key="least_efficient_table",
+                    height=400,
                 )
         except Exception:
             st.info("Dados nao disponiveis.")

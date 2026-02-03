@@ -20,6 +20,7 @@ from dashboard.data.queries import (
     load_municipalities_summary,
     WAREHOUSE_PATH,
 )
+from dashboard.components.navigation import render_clickable_ranking_table
 
 # Available indicators for ranking
 INDICATORS = {
@@ -134,36 +135,30 @@ def main() -> None:
     col_table, col_chart = st.columns([1.2, 1])
 
     with col_table:
-        # Prepare display dataframe
+        st.caption("Clique em uma linha para ver o perfil do município")
+        # Prepare display dataframe (keep id_municipio for navigation)
         display_df = df.to_pandas()
-        display_df = display_df.rename(
-            columns={
-                "ranking": "Pos.",
-                "nome_municipio": "Município",
-                "sigla_uf": "UF",
-                "regiao": "Região",
-                "populacao": "População",
-                "porte_municipio": "Porte",
-                "valor": selected_label,
-            }
-        )
 
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=600,
+        # Display columns for the ranking table
+        display_columns = ["ranking", "nome_municipio", "sigla_uf", "regiao", "populacao", "porte_municipio", "valor"]
+
+        render_clickable_ranking_table(
+            df=display_df,
+            display_columns=display_columns,
             column_config={
-                "Pos.": st.column_config.NumberColumn(width="small"),
-                "Município": st.column_config.TextColumn(width="medium"),
-                "UF": st.column_config.TextColumn(width="small"),
-                "Região": st.column_config.TextColumn(width="small"),
-                "População": st.column_config.NumberColumn(format="%.0f"),
-                "Porte": st.column_config.TextColumn(width="small"),
-                selected_label: st.column_config.NumberColumn(
+                "ranking": st.column_config.NumberColumn("Pos.", width="small"),
+                "nome_municipio": st.column_config.TextColumn("Município", width="medium"),
+                "sigla_uf": st.column_config.TextColumn("UF", width="small"),
+                "regiao": st.column_config.TextColumn("Região", width="small"),
+                "populacao": st.column_config.NumberColumn("População", format="%.0f"),
+                "porte_municipio": st.column_config.TextColumn("Porte", width="small"),
+                "valor": st.column_config.NumberColumn(
+                    selected_label,
                     format="%.3f" if indicator not in ["populacao", "renda_per_capita_2010"] else "%.0f"
                 ),
             },
+            key="main_ranking_table",
+            height=600,
         )
 
     with col_chart:

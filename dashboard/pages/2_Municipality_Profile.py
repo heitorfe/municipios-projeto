@@ -24,6 +24,11 @@ from dashboard.data.queries import (
     get_mandate_history,
     WAREHOUSE_PATH,
 )
+from dashboard.components.navigation import (
+    get_selected_municipality,
+    get_selected_municipality_name,
+    clear_navigation_state,
+)
 
 
 def format_currency(value: float) -> str:
@@ -75,18 +80,32 @@ def main() -> None:
         st.error("Dados não disponíveis. Execute o pipeline dbt primeiro.")
         return
 
+    # Check for navigation from ranking pages
+    nav_municipio_id = get_selected_municipality()
+    nav_municipio_name = get_selected_municipality_name()
+
     # Municipality search
     st.sidebar.header("🔍 Buscar Município")
 
+    # Pre-populate search if navigated from another page
+    default_search = nav_municipio_name.split(" - ")[0] if nav_municipio_name else ""
+
     search_query = st.sidebar.text_input(
         "Nome do município",
+        value=default_search,
         placeholder="Ex: São Paulo, Curitiba...",
         help="Digite parte do nome do município",
     )
 
     selected_municipio = None
 
-    if search_query and len(search_query) >= 2:
+    # If navigated from ranking, use that municipality directly
+    if nav_municipio_id:
+        selected_municipio = nav_municipio_id
+        if nav_municipio_name:
+            st.sidebar.success(f"✓ Selecionado: {nav_municipio_name}")
+        clear_navigation_state()  # Clear after use
+    elif search_query and len(search_query) >= 2:
         results = search_municipalities(search_query, limit=10)
 
         if not results.is_empty():
@@ -418,22 +437,54 @@ def main() -> None:
                 # Add background shading for each mayor's term
                 if not mandate_data.is_empty():
                     mandate_df = mandate_data.to_pandas()
-                    # Color palette for alternating mayors
-                    colors = ["rgba(52, 152, 219, 0.15)", "rgba(46, 204, 113, 0.15)",
-                              "rgba(155, 89, 182, 0.15)", "rgba(241, 196, 15, 0.15)",
-                              "rgba(231, 76, 60, 0.15)", "rgba(26, 188, 156, 0.15)"]
+                    # Party color mapping (with transparency for background)
+                    party_colors = {
+                        "PT": "rgba(237, 28, 36, 0.18)",      # Red
+                        "MDB": "rgba(255, 193, 7, 0.18)",     # Yellow
+                        "PMDB": "rgba(255, 193, 7, 0.18)",    # Yellow (old name)
+                        "PSDB": "rgba(0, 123, 255, 0.18)",    # Blue
+                        "PL": "rgba(0, 100, 0, 0.18)",        # Dark green
+                        "PP": "rgba(0, 0, 139, 0.18)",        # Dark blue
+                        "PSD": "rgba(255, 140, 0, 0.18)",     # Orange
+                        "UNIÃO": "rgba(75, 0, 130, 0.18)",    # Indigo
+                        "UNIÃO BRASIL": "rgba(75, 0, 130, 0.18)",
+                        "PDT": "rgba(220, 20, 60, 0.18)",     # Crimson
+                        "PSB": "rgba(255, 215, 0, 0.18)",     # Gold
+                        "REPUBLICANOS": "rgba(30, 144, 255, 0.18)",  # Dodger blue
+                        "PODEMOS": "rgba(138, 43, 226, 0.18)", # Blue violet
+                        "CIDADANIA": "rgba(255, 99, 71, 0.18)", # Tomato
+                        "PSOL": "rgba(128, 0, 128, 0.18)",    # Purple
+                        "PCdoB": "rgba(178, 34, 34, 0.18)",   # Firebrick
+                        "AVANTE": "rgba(255, 165, 0, 0.18)", # Orange
+                        "SOLIDARIEDADE": "rgba(255, 69, 0, 0.18)", # Orange red
+                    }
+                    default_color = "rgba(128, 128, 128, 0.15)"  # Gray fallback
+
                     for idx, row in mandate_df.iterrows():
                         ano_inicio = row.get("ano_eleicao", 0) + 1
                         ano_fim = ano_inicio + 3
                         prefeito = row.get("nome_urna_candidato") or row.get("nome_candidato", "")
                         partido = row.get("partido_vencedor", "")
-                        color = colors[idx % len(colors)]
+
+                        # Get party color (check uppercase)
+                        color = party_colors.get(partido.upper(), default_color)
+
+                        # Create annotation with mayor name and party
+                        if prefeito and partido:
+                            # Truncate name if too long
+                            display_name = f"{prefeito[:12]}..." if len(prefeito) > 12 else prefeito
+                            annotation = f"{display_name} - {partido}"
+                        elif prefeito:
+                            annotation = f"{prefeito[:15]}..." if len(prefeito) > 15 else prefeito
+                        else:
+                            annotation = partido or ""
+
                         fig.add_vrect(
                             x0=ano_inicio - 0.5, x1=ano_fim + 0.5,
                             fillcolor=color,
                             layer="below",
                             line_width=0,
-                            annotation_text=f"{prefeito[:15]}..." if len(prefeito) > 15 else prefeito,
+                            annotation_text=annotation,
                             annotation_position="top left",
                             annotation_font_size=9,
                             annotation_font_color="gray"

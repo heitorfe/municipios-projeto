@@ -16,6 +16,7 @@ from data.queries import (
     get_states,
     MARTS_SCHEMA,
 )
+from components.navigation import render_clickable_ranking_table
 
 # Page config
 st.set_page_config(
@@ -403,12 +404,14 @@ try:
 
         with col1:
             st.subheader("🏆 Top 10")
-            top_10 = df_muni.nlargest(10, selected_metric)
-            st.dataframe(
-                top_10[['nome_municipio', 'sigla_uf', selected_metric, 'populacao']],
-                use_container_width=True,
-                hide_index=True,
+            st.caption("Clique em uma linha para ver o perfil do município")
+            top_10 = df_muni.nlargest(10, selected_metric).copy()
+            top_10['ranking'] = range(1, len(top_10) + 1)
+            render_clickable_ranking_table(
+                df=top_10,
+                display_columns=['ranking', 'nome_municipio', 'sigla_uf', selected_metric, 'populacao'],
                 column_config={
+                    'ranking': 'Pos',
                     'nome_municipio': 'Município',
                     'sigla_uf': 'UF',
                     selected_metric: st.column_config.NumberColumn(
@@ -416,17 +419,21 @@ try:
                         format="%.1f"
                     ),
                     'populacao': st.column_config.NumberColumn('População', format="%,.0f")
-                }
+                },
+                key="choropleth_top_10",
+                height=350,
             )
 
         with col2:
             st.subheader("📉 Bottom 10")
-            bottom_10 = df_muni.nsmallest(10, selected_metric)
-            st.dataframe(
-                bottom_10[['nome_municipio', 'sigla_uf', selected_metric, 'populacao']],
-                use_container_width=True,
-                hide_index=True,
+            st.caption("Clique em uma linha para ver o perfil do município")
+            bottom_10 = df_muni.nsmallest(10, selected_metric).copy()
+            bottom_10['ranking'] = range(1, len(bottom_10) + 1)
+            render_clickable_ranking_table(
+                df=bottom_10,
+                display_columns=['ranking', 'nome_municipio', 'sigla_uf', selected_metric, 'populacao'],
                 column_config={
+                    'ranking': 'Pos',
                     'nome_municipio': 'Município',
                     'sigla_uf': 'UF',
                     selected_metric: st.column_config.NumberColumn(
@@ -434,7 +441,9 @@ try:
                         format="%.1f"
                     ),
                     'populacao': st.column_config.NumberColumn('População', format="%,.0f")
-                }
+                },
+                key="choropleth_bottom_10",
+                height=350,
             )
 
     else:

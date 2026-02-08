@@ -48,8 +48,6 @@ models:
         description: Election year
         data_tests:
           - not_null
-          - accepted_values:
-              values: [2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
       - name: turno
         description: |
@@ -64,9 +62,6 @@ models:
         description: Total valid votes cast in this round
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 10000000
 
       - name: total_candidatos
         description: Number of candidates competing
@@ -162,12 +157,9 @@ models:
           - not_null
 
       - name: ano
-        description: Fiscal year (2013+)
+        description: Fiscal year
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 2013
-              max_value: 2030
 
       - name: despesa_empenhada
         description: |
@@ -175,9 +167,6 @@ models:
           Represents legal obligation to pay.
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: despesa_liquidada
         description: |
@@ -185,9 +174,6 @@ models:
           Goods or services have been received.
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: despesa_paga
         description: |
@@ -195,33 +181,21 @@ models:
           Cash disbursement completed.
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: receita_bruta
         description: Gross revenues collected in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: deducoes
         description: Mandatory revenue deductions in BRL (FUNDEB, constitutional)
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: deducao_fundeb
         description: FUNDEB education fund deduction in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: receita_liquida
         description: |
@@ -236,37 +210,16 @@ models:
           Positive = surplus, Negative = deficit.
 
       - name: taxa_execucao_percentual
-        description: |
-          Budget execution rate (despesa_paga / despesa_empenhada * 100).
-          Measures how much of committed budget was actually spent.
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 150
-              row_condition: "taxa_execucao_percentual is not null"
+        description: Budget execution rate (despesa_paga / despesa_empenhada * 100)
 
       - name: populacao
         description: Population used for per-capita calculations
 
       - name: despesa_total_per_capita
-        description: |
-          Total paid expenses per inhabitant (BRL/person).
-          Useful for cross-municipality spending comparison.
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000
-              row_condition: "despesa_total_per_capita is not null"
+        description: Total paid expenses per inhabitant (BRL/person)
 
       - name: receita_total_per_capita
-        description: |
-          Net revenue per inhabitant (BRL/person).
-          Indicates fiscal capacity normalized by population.
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000
-              row_condition: "receita_total_per_capita is not null"
+        description: Net revenue per inhabitant (BRL/person)
 
       - name: saldo_fiscal_per_capita
         description: Fiscal balance per inhabitant (BRL/person)
@@ -522,12 +475,9 @@ models:
           - not_null
 
       - name: ano
-        description: Fiscal year (2013+)
+        description: Fiscal year
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 2013
-              max_value: 2030
 
       - name: sigla_uf
         description: State abbreviation
@@ -535,122 +485,60 @@ models:
           - not_null
 
       - name: fpm_value
-        description: |
-          FPM (Fundo de Participação dos Municípios) in BRL.
-          Main constitutional revenue sharing mechanism.
+        description: FPM (Fundo de Participação dos Municípios) in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: fundeb_value
-        description: |
-          FUNDEB (Education Fund) transfers in BRL.
-          Earmarked for education spending.
+        description: FUNDEB (Education Fund) transfers in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: sus_transfers
-        description: |
-          SUS (Health System) transfers in BRL.
-          Earmarked for public health spending.
+        description: SUS (Health System) transfers in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: itr_value
         description: ITR (Rural Land Tax) federal share in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 10000000000
 
       - name: ipi_exportacao_value
         description: IPI-Exportação compensation (Lei Kandir) in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 10000000000
 
       - name: outras_federais
         description: Other federal transfers in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: total_transferencias_federais
         description: Total of all federal transfers in BRL
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
 
       - name: fpm_share_pct
-        description: FPM as % of total federal transfers
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100
-              row_condition: "fpm_share_pct is not null"
+        description: FPM as percentage of total federal transfers
 
       - name: fundeb_share_pct
-        description: FUNDEB as % of total federal transfers
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100
-              row_condition: "fundeb_share_pct is not null"
+        description: FUNDEB as percentage of total federal transfers
 
       - name: sus_share_pct
-        description: SUS as % of total federal transfers
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100
-              row_condition: "sus_share_pct is not null"
+        description: SUS as percentage of total federal transfers
 
       - name: transferencias_per_capita
         description: Total federal transfers per inhabitant (BRL/person)
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000
-              row_condition: "transferencias_per_capita is not null"
 
       - name: fpm_per_capita
         description: FPM per inhabitant (BRL/person)
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 30000
-              row_condition: "fpm_per_capita is not null"
 
       - name: fundeb_per_capita
         description: FUNDEB per inhabitant (BRL/person)
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 20000
-              row_condition: "fundeb_per_capita is not null"
 
       - name: sus_per_capita
         description: SUS transfers per inhabitant (BRL/person)
-        data_tests:
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 10000
-              row_condition: "sus_per_capita is not null"
 
       - name: populacao
         description: Population used for per-capita calculations

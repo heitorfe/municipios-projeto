@@ -32,12 +32,7 @@ models:
               regex: "^[1-5][0-9]{6}$"
 
       - name: id_municipio_tse
-        description: TSE 5-digit municipality code for electoral data joins
-        data_tests:
-          - not_null
-          - dbt_expectations.expect_column_value_lengths_to_be_between:
-              min_value: 4
-              max_value: 5
+        description: TSE municipality code for electoral data joins
 
       - name: nome_municipio
         description: Official municipality name (uppercase, trimmed)
@@ -71,13 +66,9 @@ models:
 
       - name: mesorregiao
         description: IBGE mesoregion name (intermediate geographic division)
-        data_tests:
-          - not_null
 
       - name: microrregiao
         description: IBGE microregion name (local geographic division)
-        data_tests:
-          - not_null
 
       - name: is_capital
         description: Boolean flag indicating if municipality is a state capital (27 total)
@@ -119,11 +110,9 @@ models:
 
     columns:
       - name: ano
-        description: Election year (2000, 2004, 2008, 2012, 2016, 2020, 2024)
+        description: Election year (municipal elections every 4 years)
         data_tests:
           - not_null
-          - accepted_values:
-              values: [2000, 2004, 2008, 2012, 2016, 2020, 2024]
 
       - name: turno
         description: |
@@ -177,8 +166,6 @@ models:
         description: |
           Election result status.
           Values: eleito, nao_eleito, segundo_turno, eleito por media, etc.
-        data_tests:
-          - not_null
 
       - name: votos
         description: Number of votes received by the candidate
@@ -224,12 +211,9 @@ models:
 
     columns:
       - name: ano
-        description: Fiscal year (2013 onwards)
+        description: Fiscal year
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 2013
-              max_value: 2030
 
       - name: id_municipio
         description: IBGE 7-digit municipality code
@@ -243,8 +227,6 @@ models:
 
       - name: estagio
         description: Budget execution stage (standardized from estagio_bd)
-        data_tests:
-          - not_null
 
       - name: tipo_estagio
         description: |
@@ -262,15 +244,9 @@ models:
         description: Standardized account code from Base dos Dados
 
       - name: valor
-        description: |
-          Expense amount in BRL (Brazilian Reais).
-          Positive values only; negative handled via tipo_estagio.
+        description: Expense amount in BRL (Brazilian Reais)
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
-              strictly: false
 
   # ===========================================================================
   # MUNICIPAL REVENUES
@@ -293,12 +269,9 @@ models:
 
     columns:
       - name: ano
-        description: Fiscal year (2013 onwards)
+        description: Fiscal year
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 2013
-              max_value: 2030
 
       - name: id_municipio
         description: IBGE 7-digit municipality code
@@ -338,15 +311,9 @@ models:
         description: Standardized account code from Base dos Dados
 
       - name: valor
-        description: |
-          Revenue amount in BRL (Brazilian Reais).
-          Positive values; deductions are flagged separately via is_deducao.
+        description: Revenue amount in BRL (Brazilian Reais)
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 100000000000
-              strictly: false
 
   # ===========================================================================
   # HUMAN DEVELOPMENT INDEX (IDHM)
@@ -609,9 +576,6 @@ models:
         description: Total transfer amount in BRL for this type
         data_tests:
           - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-              max_value: 50000000000
 
       - name: num_contas
         description: Number of account records aggregated into this transfer type

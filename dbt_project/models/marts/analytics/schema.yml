@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: mart_cluster_analysis
+    description: |
+      Municipality clustering analysis mart combining K-Means cluster assignments
+      with development indicators, fiscal metrics, and efficiency scores.
+
+      Clusters (ordered from most to least developed):
+      - 0: Polos de Desenvolvimento (Development Poles)
+      - 1: Desenvolvimento Avancado (Advanced Development)
+      - 2: Em Desenvolvimento (Developing)
+      - 3: Vulneraveis (Vulnerable)
+      - 4: Criticos (Critical)
+
+      Methodology:
+      - Features: IDHM, IVS (inverted), Gini (inverted), Income per capita (log)
+      - Algorithm: K-Means with k=5
+      - Clusters ordered by mean IDHM (highest to lowest)
+
+      Grain: One row per municipality
+    columns:
+      - name: id_municipio_ibge
+        description: "IBGE 7-digit municipality code"
+        data_tests:
+          - unique
+          - not_null
+      - name: cluster_id
+        description: "Cluster identifier (0-4, ordered by development)"
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1, 2, 3, 4]
+      - name: cluster_label
+        description: "Portuguese label for development tier"
+        data_tests:
+          - not_null
+      - name: idhm_2010
+        description: "Human Development Index (2010 census)"
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+              config:
+                where: "idhm_2010 is not null"
+      - name: ivs_2010
+        description: "Social Vulnerability Index (2010)"
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+              config:
+                where: "ivs_2010 is not null"
+      - name: gini_2010
+        description: "Gini coefficient (income inequality, 2010)"
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+              config:
+                where: "gini_2010 is not null"
+      - name: idhm_vs_cluster
+        description: "Deviation from cluster mean IDHM (positive = above average)"
+      - name: status_transicao
+        description: "Transition potential (Potencial Promocao, Estavel, Risco Rebaixamento)"
+        data_tests:
+          - accepted_values:
+              values: ['Potencial Promocao', 'Estavel', 'Risco Rebaixamento']

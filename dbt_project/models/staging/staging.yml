@@ -1,99 +1,721 @@
 version: 2
 
 models:
+  # ===========================================================================
+  # MUNICIPALITY DIRECTORY
+  # ===========================================================================
   - name: stg_municipios
-    description: >
+    description: |
       Staging model for municipality directory.
-      Contains geographic and administrative info for all Brazilian municipalities.
+      Contains geographic and administrative info for all 5,570+ Brazilian municipalities.
+
+      This is the master reference table linking IBGE, TSE, BCB codes.
+      All downstream models should reference this for municipality attributes.
+
+      Grain: One row per municipality
+      Source: Base dos Dados - br_bd_diretorios_brasil.municipio
+    config:
+      tags: ['staging', 'municipality', 'reference']
+
     columns:
       - name: id_municipio_ibge
-        description: IBGE 7-digit municipality code
-        tests:
+        description: |
+          IBGE 7-digit municipality code (natural key).
+          Format: SSMMMMM where SS=state code (11-53), MMMMM=municipality.
+          Example: 3550308 = São Paulo city
+        data_tests:
           - unique
           - not_null
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 7
+          - dbt_expectations.expect_column_values_to_match_regex:
+              regex: "^[1-5][0-9]{6}$"
 
+      - name: id_municipio_tse
+        description: TSE 5-digit municipality code for electoral data joins
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_value_lengths_to_be_between:
+              min_value: 4
+              max_value: 5
+
+      - name: nome_municipio
+        description: Official municipality name (uppercase, trimmed)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_not_be_null:
+              row_condition: "1=1"
+
+      - name: sigla_uf
+        description: State abbreviation (2 uppercase letters)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
+                       'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
+                       'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
+
+      - name: nome_uf
+        description: Full state name
+        data_tests:
+          - not_null
+
+      - name: regiao
+        description: |
+          Geographic macro-region (Norte, Nordeste, Sudeste, Sul, Centro-Oeste).
+          Brazil is divided into 5 macro-regions for statistical purposes.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['Norte', 'Nordeste', 'Sudeste', 'Sul', 'Centro-Oeste']
+
+      - name: mesorregiao
+        description: IBGE mesoregion name (intermediate geographic division)
+        data_tests:
+          - not_null
+
+      - name: microrregiao
+        description: IBGE microregion name (local geographic division)
+        data_tests:
+          - not_null
+
+      - name: is_capital
+        description: Boolean flag indicating if municipality is a state capital (27 total)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: is_amazonia_legal
+        description: |
+          Boolean flag indicating if municipality is in Legal Amazon.
+          Legal Amazon covers 9 states (entire or partial territory).
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: ddd
+        description: Phone area code (2 digits, useful for regional analysis)
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded into staging
+
+  # ===========================================================================
+  # ELECTORAL RESULTS
+  # ===========================================================================
   - name: stg_eleicoes
-    description: >
-      Staging model for electoral results from TSE.
-      Contains candidate-level results for municipal elections.
+    description: |
+      Staging model for electoral results from TSE (Tribunal Superior Eleitoral).
+      Contains candidate-level results for municipal elections (mayors/prefeitos).
+
+      Municipal elections occur every 4 years (2000, 2004, 2008, 2012, 2016, 2020, 2024).
+      Second round (turno 2) only occurs in municipalities with 200k+ voters.
+
+      Grain: One row per candidate per municipality per election
+      Source: Base dos Dados - br_tse_eleicoes.resultados_candidato_municipio
+    config:
+      tags: ['staging', 'electoral', 'political']
+
     columns:
+      - name: ano
+        description: Election year (2000, 2004, 2008, 2012, 2016, 2020, 2024)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [2000, 2004, 2008, 2012, 2016, 2020, 2024]
+
+      - name: turno
+        description: |
+          Election round (1 or 2).
+          Second round only in municipalities with 200k+ registered voters
+          and when no candidate reaches 50%+1 in first round.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2]
+
       - name: id_municipio
         description: IBGE 7-digit municipality code
-        tests:
+        data_tests:
           - not_null
-      - name: ano
-        description: Election year
-        tests:
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 7
+
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
           - not_null
 
+      - name: sigla_partido
+        description: |
+          Party abbreviation (PT, PSDB, MDB, etc.).
+          Standardized to uppercase.
+        data_tests:
+          - not_null
+
+      - name: numero_partido
+        description: |
+          TSE party number (2 digits).
+          Each party has a fixed number (e.g., PT=13, PSDB=45, MDB=15).
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 10
+              max_value: 99
+
+      - name: nome_candidato
+        description: Full candidate name (uppercase)
+
+      - name: nome_urna_candidato
+        description: Candidate ballot name (name shown on voting machine)
+
+      - name: cargo
+        description: Position contested (should be 'prefeito' for mayors)
+
+      - name: resultado
+        description: |
+          Election result status.
+          Values: eleito, nao_eleito, segundo_turno, eleito por media, etc.
+        data_tests:
+          - not_null
+
+      - name: votos
+        description: Number of votes received by the candidate
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000
+              strictly: false
+
+      - name: is_eleito
+        description: Boolean flag indicating if candidate was elected
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: is_segundo_turno
+        description: Boolean flag indicating if this is a second round result
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+  # ===========================================================================
+  # MUNICIPAL EXPENSES
+  # ===========================================================================
   - name: stg_despesas
-    description: >
-      Staging model for municipal expenses from SICONFI.
+    description: |
+      Staging model for municipal expenses from SICONFI/Tesouro Nacional.
       Contains budget execution data by function/account.
+      SICONFI data available from 2013 onwards.
+
+      Budget execution stages:
+      - Empenhado: Committed/reserved budget (legal obligation created)
+      - Liquidado: Verified/approved expense (goods/services received)
+      - Pago: Actually disbursed amount
+
+      Grain: One row per municipality per year per account per execution stage
+      Source: Base dos Dados - br_me_siconfi.municipio_despesas_funcao
+    config:
+      tags: ['staging', 'financial', 'expenses']
+
     columns:
+      - name: ano
+        description: Fiscal year (2013 onwards)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2013
+              max_value: 2030
+
       - name: id_municipio
         description: IBGE 7-digit municipality code
-        tests:
-          - not_null
-      - name: ano
-        description: Fiscal year
-        tests:
-          - not_null
-      - name: valor
-        description: Expense amount in BRL
-        tests:
+        data_tests:
           - not_null
 
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
+          - not_null
+
+      - name: estagio
+        description: Budget execution stage (standardized from estagio_bd)
+        data_tests:
+          - not_null
+
+      - name: tipo_estagio
+        description: |
+          Classified execution stage type.
+          Values: empenhado, liquidado, pago, restos_a_pagar, outro
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['empenhado', 'liquidado', 'pago', 'restos_a_pagar', 'outro']
+
+      - name: conta
+        description: Budget account description (from conta_bd)
+
+      - name: id_conta_bd
+        description: Standardized account code from Base dos Dados
+
+      - name: valor
+        description: |
+          Expense amount in BRL (Brazilian Reais).
+          Positive values only; negative handled via tipo_estagio.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+              strictly: false
+
+  # ===========================================================================
+  # MUNICIPAL REVENUES
+  # ===========================================================================
   - name: stg_receitas
-    description: >
-      Staging model for municipal revenues from SICONFI.
+    description: |
+      Staging model for municipal revenues from SICONFI/Tesouro Nacional.
       Contains budget revenue data by source/account.
+      SICONFI data available from 2013 onwards.
+
+      Revenue types:
+      - Receita Tributária: Own-source tax revenue (IPTU, ISS, ITBI)
+      - Transferências: Federal/state transfers (FPM, FUNDEB, ICMS)
+      - Outras Receitas: Service fees, asset income, etc.
+
+      Grain: One row per municipality per year per account per stage
+      Source: Base dos Dados - br_me_siconfi.municipio_receitas_orcamentarias
+    config:
+      tags: ['staging', 'financial', 'revenue']
+
     columns:
+      - name: ano
+        description: Fiscal year (2013 onwards)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2013
+              max_value: 2030
+
       - name: id_municipio
         description: IBGE 7-digit municipality code
-        tests:
-          - not_null
-      - name: ano
-        description: Fiscal year
-        tests:
-          - not_null
-      - name: valor
-        description: Revenue amount in BRL
-        tests:
+        data_tests:
           - not_null
 
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
+          - not_null
+
+      - name: estagio
+        description: Revenue stage (standardized from estagio_bd)
+        data_tests:
+          - not_null
+
+      - name: tipo_receita
+        description: |
+          Classified revenue type.
+          Values: receita_bruta, deducao_fundeb, deducao_transferencias, outras_deducoes, outro
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['receita_bruta', 'deducao_fundeb', 'deducao_transferencias', 'outras_deducoes', 'outro']
+
+      - name: is_deducao
+        description: Boolean flag indicating if this is a revenue deduction
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: conta
+        description: Budget account description (from conta_bd)
+
+      - name: id_conta_bd
+        description: Standardized account code from Base dos Dados
+
+      - name: valor
+        description: |
+          Revenue amount in BRL (Brazilian Reais).
+          Positive values; deductions are flagged separately via is_deducao.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+              strictly: false
+
+  # ===========================================================================
+  # HUMAN DEVELOPMENT INDEX (IDHM)
+  # ===========================================================================
   - name: stg_idhm
-    description: >
+    description: |
       Staging model for Human Development Index (IDHM) from IPEA AVS.
       Contains IDHM components and 20+ social vulnerability indicators.
+
+      IDHM is the Brazilian adaptation of UN's HDI (Human Development Index).
+      Available only for census years: 2000, 2010.
+      Scale: 0-1 (higher is better).
+
+      Classification ranges:
+      - 0.800-1.000: Very High Human Development
+      - 0.700-0.799: High Human Development
+      - 0.600-0.699: Medium Human Development
+      - 0.500-0.599: Low Human Development
+      - 0.000-0.499: Very Low Human Development
+
+      Grain: One row per municipality per census year
+      Source: Base dos Dados - br_ipea_avs.municipio (aggregated from UDH level)
+    config:
+      tags: ['staging', 'idhm', 'social', 'census']
+
     columns:
       - name: id_municipio
         description: IBGE 7-digit municipality code
-        tests:
-          - not_null
-      - name: ano
-        description: Census year (2000, 2010)
-        tests:
-          - not_null
-      - name: idhm
-        description: Human Development Index (0-1 scale)
-        tests:
+        data_tests:
           - not_null
 
+      - name: ano
+        description: Census year (2000, 2010)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [2000, 2010]
+
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
+          - not_null
+
+      - name: idhm
+        description: |
+          Human Development Index (composite 0-1 scale).
+          Geometric mean of Education, Longevity, and Income dimensions.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+
+      - name: idhm_educacao
+        description: |
+          Education dimension of IDHM (0-1 scale).
+          Based on schooling of adults and school flow of youth.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+              row_condition: "idhm_educacao is not null"
+
+      - name: idhm_longevidade
+        description: |
+          Longevity dimension of IDHM (0-1 scale).
+          Based on life expectancy at birth.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+              row_condition: "idhm_longevidade is not null"
+
+      - name: idhm_renda
+        description: |
+          Income dimension of IDHM (0-1 scale).
+          Based on municipal per capita income.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+              row_condition: "idhm_renda is not null"
+
+      - name: esperanca_vida
+        description: Life expectancy at birth (years)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 40
+              max_value: 90
+              strictly: false
+              row_condition: "esperanca_vida is not null"
+
+      - name: indice_gini
+        description: |
+          Gini coefficient for income inequality (0-1 scale).
+          0 = perfect equality, 1 = perfect inequality.
+          Brazil typically ranges 0.45-0.65.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+              row_condition: "indice_gini is not null"
+
+      - name: renda_per_capita
+        description: Municipal per capita income in BRL (nominal values)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000
+              strictly: false
+              row_condition: "renda_per_capita is not null"
+
+      - name: ivs
+        description: |
+          Social Vulnerability Index (IVS, 0-1 scale).
+          0 = low vulnerability, 1 = high vulnerability.
+          Inverse interpretation to IDHM (lower is better).
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              strictly: false
+              row_condition: "ivs is not null"
+
+      - name: ivs_infraestrutura
+        description: Infrastructure vulnerability component (0-1)
+
+      - name: ivs_capital_humano
+        description: Human capital vulnerability component (0-1)
+
+      - name: ivs_renda_trabalho
+        description: Income and labor vulnerability component (0-1)
+
+      - name: taxa_analfabetismo_18_mais
+        description: Illiteracy rate for population 18+ years (percentage)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              strictly: false
+              row_condition: "taxa_analfabetismo_18_mais is not null"
+
+      - name: taxa_desemprego
+        description: Unemployment rate for population 18+ (percentage)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              strictly: false
+              row_condition: "taxa_desemprego is not null"
+
+      - name: taxa_informalidade
+        description: Informality rate in labor market (percentage)
+
+      - name: taxa_pobreza
+        description: Poverty rate - vulnerable population proportion (percentage)
+
+      - name: udh_count
+        description: Number of UDHs (Human Development Units) aggregated
+
+  # ===========================================================================
+  # POPULATION ESTIMATES
+  # ===========================================================================
   - name: stg_populacao
-    description: >
+    description: |
       Staging model for population estimates from IBGE.
       Contains annual population data from 1991 to 2025.
+
+      Data types:
+      - Census years (1991, 2000, 2010, 2022): Actual enumerated population
+      - Other years: IBGE estimates/projections
+
+      Grain: One row per municipality per year
+      Source: Base dos Dados - br_ibge_populacao.municipio
+    config:
+      tags: ['staging', 'population', 'demographics']
+
     columns:
       - name: id_municipio
         description: IBGE 7-digit municipality code
-        tests:
+        data_tests:
           - not_null
+
       - name: ano
-        description: Reference year
-        tests:
+        description: Reference year (1991-2025)
+        data_tests:
           - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1991
+              max_value: 2030
+
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
+          - not_null
+
       - name: populacao
-        description: Population count
-        tests:
+        description: |
+          Population count.
+          Census years have actual counts; other years are estimates.
+          Range: ~800 (smallest municipality) to ~12M (São Paulo).
+        data_tests:
           - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 100
+              max_value: 15000000
+
+  # ===========================================================================
+  # FEDERAL TRANSFERS
+  # ===========================================================================
+  - name: stg_transferencias
+    description: |
+      Staging model for federal transfer classification.
+      Extracts and classifies federal transfers from SICONFI revenue data.
+
+      Transfer types:
+      - FPM: Fundo de Participação dos Municípios (constitutional revenue sharing)
+      - FUNDEB: Education fund transfers
+      - SUS: Health system transfers
+      - ITR: Rural land tax share
+      - IPI_EXPORTACAO: Export compensation
+      - OUTRAS_FEDERAIS: Other federal transfers
+
+      Grain: One row per municipality per year per transfer type
+      Source: Derived from stg_receitas with pattern matching
+    config:
+      tags: ['staging', 'financial', 'transfers']
+
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Fiscal year
+        data_tests:
+          - not_null
+
+      - name: sigla_uf
+        description: State abbreviation (2 letters)
+        data_tests:
+          - not_null
+
+      - name: tipo_transferencia
+        description: |
+          Classified transfer type.
+          Values: FPM, FUNDEB, SUS, ITR, IPI_EXPORTACAO, OUTRAS_FEDERAIS
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['FPM', 'FUNDEB', 'SUS', 'ITR', 'IPI_EXPORTACAO', 'OUTRAS_FEDERAIS']
+
+      - name: valor_total
+        description: Total transfer amount in BRL for this type
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: num_contas
+        description: Number of account records aggregated into this transfer type
+
+  # ===========================================================================
+  # IDEB - EDUCATION QUALITY
+  # ===========================================================================
+  - name: stg_ideb
+    description: |
+      IDEB - Education Development Index staging model.
+      Biennial education quality indicator from INEP/MEC.
+
+      IDEB combines:
+      - Flow rate (approval/retention/dropout)
+      - Learning performance (SAEB standardized tests)
+
+      Scale: 0-10 (higher is better).
+      National goal: 6.0 by 2022 (OECD average).
+
+      Quality interpretation:
+      - >= 6.0: Desenvolvido (Developed)
+      - 5.0-5.9: Medio-Alto (Medium-High)
+      - 4.0-4.9: Medio (Medium)
+      - 3.0-3.9: Medio-Baixo (Medium-Low)
+      - < 3.0: Baixo (Low)
+
+      Grain: One row per municipality per year per school cycle
+      Source: Base dos Dados - br_inep_ideb.municipio
+    config:
+      tags: ['staging', 'education', 'social']
+
+    columns:
+      - name: id_municipio
+        description: IBGE 7-digit municipality code
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Assessment year (biennial, odd years from 2005)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2005
+              max_value: 2030
+
+      - name: rede_ensino
+        description: School network (publica, privada, total)
+        data_tests:
+          - not_null
+
+      - name: ideb
+        description: IDEB composite score (0-10 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10
+              row_condition: "ideb is not null"
+
+      - name: taxa_aprovacao
+        description: Approval rate (percentage 0-100)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "taxa_aprovacao is not null"
+
+      - name: indicador_rendimento
+        description: Flow indicator (derived from approval rate)
+
+      - name: nota_saeb_matematica
+        description: SAEB Mathematics standardized test score
+
+      - name: nota_saeb_lingua_portuguesa
+        description: SAEB Portuguese Language standardized test score
+
+      - name: nota_saeb_media_padronizada
+        description: Standardized average SAEB score (0-10)
+
+      - name: meta_ideb
+        description: Projected/target IDEB for this assessment
+
+      - name: atingiu_meta
+        description: Boolean flag indicating if IDEB met the projected target
+        data_tests:
+          - accepted_values:
+              values: [true, false]
+
+      - name: faixa_ideb
+        description: |
+          IDEB quality classification tier.
+          Values: Desenvolvido, Medio-Alto, Medio, Medio-Baixo, Baixo
+        data_tests:
+          - accepted_values:
+              values: ['Desenvolvido', 'Medio-Alto', 'Medio', 'Medio-Baixo', 'Baixo']
+
+  # ===========================================================================
+  # LIVE BIRTHS
+  # ===========================================================================
+  - name: stg_nascimentos
+    description: |
+      Live births staging model from SINASC/DATASUS.
+      Used for calculating birth rates and health indicators.
+
+      Grain: One row per municipality per year
+      Source: Base dos Dados - br_ms_sinasc.municipio
+    config:
+      tags: ['staging', 'health', 'demographics']

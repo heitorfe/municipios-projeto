@@ -7,3 +7,8 @@ packages:
   # Code generation utilities
   - package: dbt-labs/codegen
     version: ">=0.12.0"
+
+  # Great Expectations-style data quality testing
+  # Provides 50+ test types for comprehensive data validation
+  - package: calogica/dbt_expectations
+    version: ">=0.10.0"

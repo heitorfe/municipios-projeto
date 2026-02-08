@@ -1,56 +1,662 @@
 version: 2
 
 models:
+  # ===========================================================================
+  # FCT_ELEICOES - Electoral Results Fact Table
+  # ===========================================================================
   - name: fct_eleicoes
-    description: >
-      Electoral results fact table aggregated by municipality/year/turno.
-      Contains winning party, vote totals, and competition metrics.
+    description: |
+      Electoral results fact table for mayoral (prefeito) elections.
+      Aggregated to show winning party and vote distribution per election.
+
+      Municipal elections occur every 4 years (2000, 2004, 2008, etc.).
+      Second round (turno 2) only in municipalities with 200k+ voters.
+
+      Key Metrics:
+      - total_votos: Total valid votes cast
+      - votos_vencedor: Votes received by winner
+      - percentual_vencedor: Winner's vote share percentage
+      - indice_competicao: Number of candidates (competition proxy)
+
+      Grain: One row per municipality per election year per round (turno)
+    config:
+      tags: ['fact', 'electoral', 'gold']
+
     columns:
       - name: sk_municipio
         description: Foreign key to dim_municipio
-        tests:
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('dim_municipio')
+              field: sk_municipio
+
       - name: sk_ano
         description: Foreign key to dim_calendario
-        tests:
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('dim_calendario')
+              field: sk_ano
+
+      - name: id_municipio
+        description: IBGE municipality code (natural key)
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Election year
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [2000, 2004, 2008, 2012, 2016, 2020, 2024]
+
+      - name: turno
+        description: |
+          Election round (1 or 2).
+          Most municipalities have only 1 round.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2]
+
+      - name: total_votos
+        description: Total valid votes cast in this round
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000
+
+      - name: total_candidatos
+        description: Number of candidates competing
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 50
+
+      - name: total_partidos
+        description: Number of distinct parties with candidates
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 50
+
       - name: partido_vencedor
-        description: Winning party abbreviation
+        description: Abbreviation of winning party (PT, PSDB, MDB, etc.)
 
+      - name: votos_vencedor
+        description: Number of votes received by winner
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000
+              row_condition: "votos_vencedor is not null"
+
+      - name: percentual_vencedor
+        description: Winner's vote share as percentage (0-100)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "percentual_vencedor is not null"
+
+      - name: indice_competicao
+        description: Competition index (equals total_candidatos)
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded
+
+  # ===========================================================================
+  # FCT_FINANCAS_MUNICIPAIS - Municipal Finances Fact Table
+  # ===========================================================================
   - name: fct_financas_municipais
-    description: >
-      Municipal finances fact table with expenses and revenues.
-      Aggregated at municipality-year level.
-    columns:
-      - name: sk_municipio
-        description: Foreign key to dim_municipio
-        tests:
-          - not_null
-      - name: sk_ano
-        description: Foreign key to dim_calendario
-        tests:
-          - not_null
-      - name: despesa_paga
-        description: Total paid expenses in BRL
-      - name: receita_liquida
-        description: Net revenue (gross - deductions) in BRL
-      - name: saldo_fiscal
-        description: Fiscal balance (revenue - expenses)
+    description: |
+      Municipal finances fact table combining expenses and revenues.
+      Consolidated at municipality-year level for trend analysis.
 
-  - name: fct_indicadores_sociais
-    description: >
-      Social indicators fact table with IDHM, IVS, and 20+ metrics.
-      Periodic snapshot grain: one row per municipality per census year.
+      Data Availability: 2013+ (SICONFI coverage)
+
+      Key Expense Stages:
+      - despesa_empenhada: Committed/budgeted (legal obligation)
+      - despesa_liquidada: Verified/accrued (goods/services received)
+      - despesa_paga: Actually paid/disbursed
+
+      Key Revenue Metrics:
+      - receita_bruta: Gross revenues collected
+      - deducoes: Mandatory deductions (FUNDEB, constitutional)
+      - receita_liquida: Net revenue (gross - deductions)
+
+      Per-Capita Metrics:
+      - Included for cross-municipality comparison
+      - Normalized by population for size-agnostic analysis
+
+      Note: Values in BRL at nominal prices (consider inflation for time-series)
+
+      Grain: One row per municipality per year
+    config:
+      tags: ['fact', 'financial', 'gold']
+
     columns:
       - name: sk_municipio
         description: Foreign key to dim_municipio
-        tests:
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('dim_municipio')
+              field: sk_municipio
+
       - name: sk_ano
         description: Foreign key to dim_calendario
-        tests:
+        data_tests:
           - not_null
+          - relationships:
+              to: ref('dim_calendario')
+              field: sk_ano
+
+      - name: id_municipio
+        description: IBGE municipality code (natural key)
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Fiscal year (2013+)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2013
+              max_value: 2030
+
+      - name: despesa_empenhada
+        description: |
+          Committed/budgeted expenses in BRL.
+          Represents legal obligation to pay.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: despesa_liquidada
+        description: |
+          Verified/accrued expenses in BRL.
+          Goods or services have been received.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: despesa_paga
+        description: |
+          Actually paid expenses in BRL.
+          Cash disbursement completed.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: receita_bruta
+        description: Gross revenues collected in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: deducoes
+        description: Mandatory revenue deductions in BRL (FUNDEB, constitutional)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: deducao_fundeb
+        description: FUNDEB education fund deduction in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: receita_liquida
+        description: |
+          Net revenue in BRL (receita_bruta - deducoes).
+          This is the actual available revenue.
+        data_tests:
+          - not_null
+
+      - name: saldo_fiscal
+        description: |
+          Fiscal balance in BRL (receita_liquida - despesa_paga).
+          Positive = surplus, Negative = deficit.
+
+      - name: taxa_execucao_percentual
+        description: |
+          Budget execution rate (despesa_paga / despesa_empenhada * 100).
+          Measures how much of committed budget was actually spent.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 150
+              row_condition: "taxa_execucao_percentual is not null"
+
+      - name: populacao
+        description: Population used for per-capita calculations
+
+      - name: despesa_total_per_capita
+        description: |
+          Total paid expenses per inhabitant (BRL/person).
+          Useful for cross-municipality spending comparison.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000
+              row_condition: "despesa_total_per_capita is not null"
+
+      - name: receita_total_per_capita
+        description: |
+          Net revenue per inhabitant (BRL/person).
+          Indicates fiscal capacity normalized by population.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000
+              row_condition: "receita_total_per_capita is not null"
+
+      - name: saldo_fiscal_per_capita
+        description: Fiscal balance per inhabitant (BRL/person)
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded
+
+  # ===========================================================================
+  # FCT_INDICADORES_SOCIAIS - Social Indicators Fact Table
+  # ===========================================================================
+  - name: fct_indicadores_sociais
+    description: |
+      Social indicators fact table with IDHM, IVS, and 20+ socioeconomic metrics.
+      Periodic snapshot grain: one row per municipality per census year.
+
+      Data Availability: 2000, 2010 (census years with IDHM data)
+
+      IDHM Components (0-1 scale, higher is better):
+      - idhm: Composite Human Development Index
+      - idhm_educacao: Education dimension
+      - idhm_longevidade: Longevity dimension
+      - idhm_renda: Income dimension
+
+      IVS Components (0-1 scale, lower is better):
+      - ivs: Composite Social Vulnerability Index
+      - ivs_infraestrutura: Infrastructure vulnerability
+      - ivs_capital_humano: Human capital vulnerability
+      - ivs_renda_trabalho: Income/labor vulnerability
+
+      Note: Snapshot fact - values represent point-in-time census measurements
+
+      Grain: One row per municipality per census year
+    config:
+      tags: ['fact', 'social', 'gold', 'census']
+
+    columns:
+      - name: sk_municipio
+        description: Foreign key to dim_municipio
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_municipio')
+              field: sk_municipio
+
+      - name: sk_ano
+        description: Foreign key to dim_calendario
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_calendario')
+              field: sk_ano
+
+      - name: id_municipio
+        description: IBGE municipality code (natural key)
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Census year (2000, 2010)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [2000, 2010]
+
       - name: idhm
-        description: Human Development Index (0-1 scale)
+        description: |
+          Human Development Index (0-1 scale).
+          Geometric mean of Education, Longevity, and Income.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+
+      - name: idhm_educacao
+        description: Education dimension of IDHM (0-1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_educacao is not null"
+
+      - name: idhm_longevidade
+        description: Longevity dimension of IDHM (0-1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_longevidade is not null"
+
+      - name: idhm_renda
+        description: Income dimension of IDHM (0-1)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_renda is not null"
+
+      - name: idhm_subescolaridade
+        description: Schooling sub-index of education dimension
+
+      - name: idhm_subfrequencia
+        description: School attendance sub-index of education dimension
+
+      - name: esperanca_vida
+        description: Life expectancy at birth (years)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 40
+              max_value: 90
+              row_condition: "esperanca_vida is not null"
+
+      - name: taxa_envelhecimento
+        description: Aging rate (% population 65+)
+
+      - name: taxa_analfabetismo_18_mais
+        description: Illiteracy rate for adults 18+ (%)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "taxa_analfabetismo_18_mais is not null"
+
+      - name: taxa_fundamental_completo
+        description: Percentage of adults 18+ with completed elementary education
+
+      - name: taxa_medio_completo
+        description: Percentage of youth 18-20 with completed high school
+
+      - name: renda_per_capita
+        description: Per capita income in BRL (nominal values)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000
+              row_condition: "renda_per_capita is not null"
+
+      - name: indice_gini
+        description: |
+          Gini coefficient (0-1 scale).
+          0 = perfect equality, 1 = perfect inequality.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "indice_gini is not null"
+
+      - name: taxa_pobreza
+        description: Poverty rate (% vulnerable population)
+
       - name: ivs
-        description: Social Vulnerability Index (0-1 scale)
+        description: |
+          Social Vulnerability Index (0-1 scale).
+          Lower is better (inverse to IDHM interpretation).
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "ivs is not null"
+
+      - name: ivs_infraestrutura
+        description: Infrastructure vulnerability component (0-1)
+
+      - name: ivs_capital_humano
+        description: Human capital vulnerability component (0-1)
+
+      - name: ivs_renda_trabalho
+        description: Income/labor vulnerability component (0-1)
+
+      - name: taxa_desemprego
+        description: Unemployment rate for adults 18+ (%)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "taxa_desemprego is not null"
+
+      - name: taxa_informalidade
+        description: Labor market informality rate (%)
+
+      - name: taxa_energia_eletrica
+        description: Percentage of households with electricity access
+
+      - name: taxa_sem_saneamento
+        description: Percentage of households lacking water/sewage
+
+      - name: idhm_percentual
+        description: IDHM as percentage (0-100 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "idhm_percentual is not null"
+
+      - name: ivs_percentual
+        description: IVS as percentage (0-100 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "ivs_percentual is not null"
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded
+
+  # ===========================================================================
+  # FCT_TRANSFERENCIAS_FEDERAIS - Federal Transfers Fact Table
+  # ===========================================================================
+  - name: fct_transferencias_federais
+    description: |
+      Federal transfers fact table with breakdown by transfer type.
+      Essential for fiscal dependency analysis.
+
+      Data Availability: 2013+ (SICONFI coverage)
+
+      Transfer Types:
+      - FPM: Fundo de Participação dos Municípios (constitutional revenue sharing)
+      - FUNDEB: Education fund transfers
+      - SUS: Health system transfers
+      - ITR: Rural land tax (federal share)
+      - IPI-Exportação: Export compensation (Lei Kandir)
+      - outras_federais: Other federal transfers
+
+      Use Cases:
+      - Fiscal dependency ratio calculation
+      - Transfer composition analysis
+      - Per-capita transfer comparisons
+
+      Grain: One row per municipality per year
+    config:
+      tags: ['fact', 'financial', 'transfers', 'gold']
+
+    columns:
+      - name: sk_municipio
+        description: Foreign key to dim_municipio
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_municipio')
+              field: sk_municipio
+
+      - name: sk_ano
+        description: Foreign key to dim_calendario
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_calendario')
+              field: sk_ano
+
+      - name: id_municipio
+        description: IBGE municipality code (natural key)
+        data_tests:
+          - not_null
+
+      - name: ano
+        description: Fiscal year (2013+)
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2013
+              max_value: 2030
+
+      - name: sigla_uf
+        description: State abbreviation
+        data_tests:
+          - not_null
+
+      - name: fpm_value
+        description: |
+          FPM (Fundo de Participação dos Municípios) in BRL.
+          Main constitutional revenue sharing mechanism.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: fundeb_value
+        description: |
+          FUNDEB (Education Fund) transfers in BRL.
+          Earmarked for education spending.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: sus_transfers
+        description: |
+          SUS (Health System) transfers in BRL.
+          Earmarked for public health spending.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: itr_value
+        description: ITR (Rural Land Tax) federal share in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000000
+
+      - name: ipi_exportacao_value
+        description: IPI-Exportação compensation (Lei Kandir) in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000000
+
+      - name: outras_federais
+        description: Other federal transfers in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000000000
+
+      - name: total_transferencias_federais
+        description: Total of all federal transfers in BRL
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100000000000
+
+      - name: fpm_share_pct
+        description: FPM as % of total federal transfers
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "fpm_share_pct is not null"
+
+      - name: fundeb_share_pct
+        description: FUNDEB as % of total federal transfers
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "fundeb_share_pct is not null"
+
+      - name: sus_share_pct
+        description: SUS as % of total federal transfers
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "sus_share_pct is not null"
+
+      - name: transferencias_per_capita
+        description: Total federal transfers per inhabitant (BRL/person)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 50000
+              row_condition: "transferencias_per_capita is not null"
+
+      - name: fpm_per_capita
+        description: FPM per inhabitant (BRL/person)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 30000
+              row_condition: "fpm_per_capita is not null"
+
+      - name: fundeb_per_capita
+        description: FUNDEB per inhabitant (BRL/person)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 20000
+              row_condition: "fundeb_per_capita is not null"
+
+      - name: sus_per_capita
+        description: SUS transfers per inhabitant (BRL/person)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000
+              row_condition: "sus_per_capita is not null"
+
+      - name: populacao
+        description: Population used for per-capita calculations
+
+      - name: total_contas_agregadas
+        description: Number of source account records aggregated (data quality)
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded

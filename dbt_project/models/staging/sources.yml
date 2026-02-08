@@ -5,126 +5,157 @@ sources:
     description: >
       Raw data extracted from Base dos Dados BigQuery.
       These are Parquet files stored in the Bronze layer (data/raw/).
+      Updated periodically via extraction scripts in src/extraction/.
     meta:
       owner: data_engineering
       data_source: Base dos Dados (BigQuery)
+      update_frequency: monthly
+
+    # Default freshness for all tables in this source
+    freshness:
+      warn_after: {count: 90, period: day}
+      error_after: {count: 180, period: day}
 
     tables:
       - name: municipio
         description: >
           Municipality directory with code crosswalk.
           Contains IBGE, TSE, BCB codes and geographic information.
+          This is the master reference for all Brazilian municipalities (5,570+).
           Note: Access via read_parquet() in staging models, not via source().
         meta:
           access_method: read_parquet('../data/raw/municipio.parquet')
+          grain: one row per municipality
+          expected_row_count: 5570
         columns:
           - name: id_municipio
-            description: IBGE 7-digit municipality code
+            description: IBGE 7-digit municipality code (natural key)
           - name: id_municipio_tse
-            description: TSE municipality code
+            description: TSE municipality code for electoral data joins
           - name: nome
-            description: Municipality name
+            description: Official municipality name
           - name: sigla_uf
-            description: State abbreviation (2 letters)
+            description: State abbreviation (2 letters, e.g., SP, RJ, MG)
 
       - name: populacao
         description: >
-          Historical population by municipality.
+          Historical population by municipality (1991-2025).
           Source: IBGE population estimates and census data.
-        external:
-          location: "read_parquet('../data/raw/municipio.parquet')"
+          Annual estimates are projections; census years have actual counts.
         meta:
           source_table: br_ibge_populacao.municipio
+          grain: one row per municipality per year
+          coverage: 1991-2025
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
           - name: ano
-            description: Reference year
+            description: Reference year (1991-2025)
           - name: populacao
-            description: Population count
+            description: Population count (census or estimate)
 
       - name: idhm
         description: >
-          Human Development Index by municipality.
+          Human Development Index (IDHM) and 200+ socioeconomic indicators.
           Source: Atlas Brasil (PNUD/IPEA/FJP).
-          Contains IDHM and 200+ socio-economic indicators.
-        external:
-          location: "read_parquet('../data/raw/municipio.parquet')"
+          Available only for census years: 1991, 2000, 2010.
+
+          Key components:
+          - IDHM: Composite index (0-1 scale, higher is better)
+          - IDHM_E: Education dimension
+          - IDHM_L: Longevity dimension
+          - IDHM_R: Income dimension
+          - IVS: Social Vulnerability Index (0-1, lower is better)
         meta:
           source_table: br_pnud_atlas.municipio
+          grain: one row per municipality per census year
+          coverage: 1991, 2000, 2010
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
           - name: ano
             description: Census year (1991, 2000, 2010)
           - name: idhm
-            description: Human Development Index (0-1 scale)
+            description: Human Development Index (0-1 scale, higher = better development)
           - name: idhm_e
-            description: Education component of IDHM
+            description: Education component of IDHM (0-1 scale)
           - name: idhm_l
-            description: Longevity component of IDHM
+            description: Longevity component of IDHM (0-1 scale)
           - name: idhm_r
-            description: Income component of IDHM
+            description: Income component of IDHM (0-1 scale)
 
       - name: eleicoes
         description: >
-          Electoral results by municipality.
-          Source: TSE (Tribunal Superior Eleitoral).
+          Electoral results by municipality from TSE.
           Filtered for mayors (prefeitos) only.
-        external:
-          location: "read_parquet('../data/raw/resultados_candidato_municipio.parquet')"
+          Contains candidate-level results with vote counts.
+          Municipal elections occur every 4 years (2000, 2004, 2008, etc.)
         meta:
           source_table: br_tse_eleicoes.resultados_candidato_municipio
+          grain: one row per candidate per municipality per election
+          coverage: 2000, 2004, 2008, 2012, 2016, 2020, 2024
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
           - name: ano
             description: Election year
           - name: sigla_partido
-            description: Party abbreviation
+            description: Party abbreviation (PT, PSDB, MDB, etc.)
           - name: resultado
-            description: Election result (eleito, nao_eleito, etc.)
+            description: Election result (eleito, nao_eleito, segundo_turno)
 
       - name: despesas
         description: >
-          Municipal expenses by function.
-          Source: SICONFI/Tesouro Nacional.
-        external:
-          location: "read_parquet('../data/raw/municipio_despesas_funcao.parquet')"
+          Municipal expenses by function from SICONFI/Tesouro Nacional.
+          Contains budget execution stages: empenhada, liquidada, pagas.
+          SICONFI data available from 2013 onwards.
+
+          Budget execution stages:
+          - Empenhada: Committed/budgeted expense
+          - Liquidada: Verified/approved expense
+          - Paga: Actually paid expense
         meta:
           source_table: br_me_siconfi.municipio_despesas_funcao
+          grain: one row per municipality per year per account per stage
+          coverage: 2013-present
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
           - name: ano
             description: Fiscal year
           - name: valor
-            description: Expense amount in BRL
+            description: Expense amount in BRL (Brazilian Reais)
 
       - name: receitas
         description: >
-          Municipal revenues by source.
-          Source: SICONFI/Tesouro Nacional.
-        external:
-          location: "read_parquet('../data/raw/municipio_receitas_orcamentarias.parquet')"
+          Municipal revenues by source from SICONFI/Tesouro Nacional.
+          Contains all revenue categories including own-source and transfers.
+          SICONFI data available from 2013 onwards.
+
+          Revenue types:
+          - Receita Tributária: Tax revenue (IPTU, ISS, ITBI)
+          - Transferências: Federal/state transfers (FPM, FUNDEB, ICMS)
+          - Outras Receitas: Other sources
         meta:
           source_table: br_me_siconfi.municipio_receitas_orcamentarias
+          grain: one row per municipality per year per account per stage
+          coverage: 2013-present
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
           - name: ano
             description: Fiscal year
           - name: valor
-            description: Revenue amount in BRL
+            description: Revenue amount in BRL (Brazilian Reais)
 
       - name: saneamento
         description: >
-          Sanitation indicators by municipality.
+          Sanitation indicators by municipality from SNIS.
+          Covers water supply and sewage treatment metrics.
           Source: SNIS (Sistema Nacional de Informações sobre Saneamento).
-        external:
-          location: "read_parquet('../data/raw/municipio.parquet')"
         meta:
           source_table: br_mdr_snis.municipio
+          grain: one row per municipality per year
         columns:
           - name: id_municipio
             description: IBGE 7-digit municipality code
@@ -132,81 +163,65 @@ sources:
             description: Reference year
 
   # =========================================================================
-  # POLITICAL-ECONOMY EXTENSION SOURCES
+  # ADDITIONAL DATA SOURCES
   # =========================================================================
 
   - name: raw
     description: >
-      Additional raw data sources for political-economy analysis.
-      Includes education, health, and social transfer data.
+      Additional raw data sources for extended analysis.
+      Includes education quality indicators and candidate characteristics.
+    meta:
+      owner: data_engineering
+      update_frequency: varies
 
     tables:
       - name: ideb_municipio
         description: >
           IDEB - Education Development Index by municipality.
           Biennial data (every 2 years) measuring education quality.
+          Combines standardized test scores with pass rates.
           Source: INEP/MEC.
-        external:
-          location: "read_parquet('../data/raw/ideb_municipio.parquet')"
+
+          Quality interpretation:
+          - >= 6.0: Developed
+          - 5.0-5.9: Medium-High
+          - 4.0-4.9: Medium
+          - 3.0-3.9: Medium-Low
+          - < 3.0: Low
         meta:
           source_table: br_inep_ideb.municipio
-          frequency: biennial
+          frequency: biennial (odd years)
           coverage: 2005-2023
-
-      - name: mortalidade_municipio
-        description: >
-          Mortality data aggregated by municipality and cause.
-          Pre-aggregated from SIM microdata.
-          Source: DATASUS/MS.
-        external:
-          location: "read_parquet('../data/raw/mortalidade_municipio.parquet')"
-        meta:
-          source_table: br_ms_sim.municipio_causa
-          frequency: annual
-          coverage: 1996-2022
+          grain: one row per municipality per cycle per year
 
       - name: nascimentos_municipio
         description: >
-          Live births by municipality.
-          Used for calculating mortality rates.
+          Live births by municipality from SINASC.
+          Used for calculating birth rates and infant mortality rates.
           Source: SINASC/DATASUS.
-        external:
-          location: "read_parquet('../data/raw/nascimentos_municipio.parquet')"
         meta:
           source_table: br_ms_sinasc.municipio
           frequency: annual
           coverage: 1996-2022
-
-      - name: bolsa_familia_municipio
-        description: >
-          Bolsa Familia conditional cash transfer program.
-          Beneficiaries and transfer amounts by municipality.
-          Source: MDS/Cadastro Unico.
-        external:
-          location: "read_parquet('../data/raw/bolsa_familia_municipio.parquet')"
-        meta:
-          source_table: br_mds_bolsa_familia.municipio
-          frequency: annual/monthly
-          coverage: 2004-2023
+          grain: one row per municipality per year
 
       - name: candidatos
         description: >
           Electoral candidates with personal characteristics.
-          Gender, age, education, occupation, wealth.
-          Source: TSE.
-        external:
-          location: "read_parquet('../data/raw/candidatos.parquet')"
+          Contains demographics: gender, age, education, occupation.
+          Also includes declared assets for wealth analysis.
+          Source: TSE (Tribunal Superior Eleitoral).
         meta:
           source_table: br_tse_eleicoes.candidatos
           frequency: election years
           coverage: 1994-2024
+          grain: one row per candidate per election
 
       - name: partidos_tse
         description: >
-          Political parties official registry.
-          Creation and extinction dates.
-          Source: TSE.
-        external:
-          location: "read_parquet('../data/raw/partidos.parquet')"
+          Political parties official registry from TSE.
+          Contains party creation and extinction dates.
+          Used to build dim_partido with ideology classification.
         meta:
           source_table: br_tse_eleicoes.partidos
+          grain: one row per party

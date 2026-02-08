@@ -1,231 +1,532 @@
 version: 2
 
 models:
+  # ===========================================================================
+  # DIM_MUNICIPIO - Central Municipality Dimension
+  # ===========================================================================
   - name: dim_municipio
-    description: >
-      Conformed municipality dimension containing geographic and administrative
-      information for all 5,570+ Brazilian municipalities.
-      This is the central dimension linking all fact tables.
+    description: |
+      Conformed municipality dimension containing geographic, demographic, and
+      social development information for all 5,570+ Brazilian municipalities.
 
-      Note: Population and IDHM data can be added when those datasets are extracted.
+      This is the CENTRAL dimension linking all fact tables in the star schema.
+      All fact tables should join to this dimension via sk_municipio.
+
+      Key Features:
+      - Surrogate key (sk_municipio) for fact table joins
+      - Geographic hierarchies (region, state, meso/microregion)
+      - Population snapshot (latest available year)
+      - IDHM and social indicators snapshot (2010 census)
+      - Size classification by population
+
+      Grain: One row per municipality
+      Update Frequency: Batch refresh when underlying data changes
     config:
-      tags: ['dimension', 'municipality', 'gold']
+      tags: ['dimension', 'municipality', 'gold', 'conformed']
+
+    data_tests:
+      # Table-level test: Expected row count for Brazilian municipalities
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 5500
+          max_value: 5600
 
     columns:
       - name: sk_municipio
-        description: Surrogate key for the municipality
-        tests:
+        description: |
+          Surrogate key for the municipality (MD5 hash of id_municipio_ibge).
+          Use this key for all fact table joins.
+        data_tests:
           - unique
           - not_null
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 32
 
       - name: id_municipio_ibge
-        description: IBGE 7-digit municipality code (natural key)
-        tests:
+        description: |
+          IBGE 7-digit municipality code (natural key).
+          Format: SSMMMMM where SS=state code (11-53), MMMMM=municipality.
+        data_tests:
           - unique
           - not_null
+          - dbt_expectations.expect_column_value_lengths_to_equal:
+              value: 7
 
       - name: id_municipio_tse
         description: TSE municipality code for electoral data joins
+        data_tests:
+          - not_null
+
+      - name: id_municipio_6
+        description: IBGE 6-digit code (without check digit)
+
+      - name: id_municipio_rf
+        description: Receita Federal (tax authority) code
+
+      - name: id_municipio_bcb
+        description: Central Bank of Brazil code
 
       - name: nome_municipio
         description: Official municipality name
-        tests:
+        data_tests:
           - not_null
+          - dbt_expectations.expect_column_values_to_not_be_null:
+              row_condition: "1=1"
 
       - name: sigla_uf
-        description: State abbreviation (2 letters)
-        tests:
+        description: State abbreviation (2 uppercase letters)
+        data_tests:
           - not_null
           - accepted_values:
               values: ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
                        'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
                        'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']
 
+      - name: nome_uf
+        description: Full state name
+        data_tests:
+          - not_null
+
       - name: regiao
-        description: Geographic region (Norte, Nordeste, Sudeste, Sul, Centro-Oeste)
-        tests:
+        description: |
+          Geographic macro-region.
+          Brazil is divided into 5 macro-regions for statistical purposes.
+        data_tests:
+          - not_null
           - accepted_values:
               values: ['Norte', 'Nordeste', 'Sudeste', 'Sul', 'Centro-Oeste']
 
       - name: mesorregiao
-        description: IBGE mesoregion name
+        description: IBGE mesoregion name (intermediate geographic division)
+        data_tests:
+          - not_null
 
       - name: microrregiao
-        description: IBGE microregion name
+        description: IBGE microregion name (local geographic division)
+        data_tests:
+          - not_null
 
       - name: is_capital
-        description: Flag indicating if municipality is a state capital
+        description: Flag indicating if municipality is a state capital (27 total)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
 
       - name: is_amazonia_legal
-        description: Flag indicating if municipality is in Legal Amazon
+        description: Flag indicating if municipality is in Legal Amazon (9 states)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
 
       - name: ddd
-        description: Phone area code (useful for regional analysis)
+        description: Phone area code (2 digits)
 
+      - name: populacao
+        description: |
+          Population count (latest available year).
+          Source: IBGE population estimates.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 100
+              max_value: 15000000
+              row_condition: "populacao is not null"
+
+      - name: ano_populacao
+        description: Reference year for population data
+
+      - name: porte_municipio
+        description: |
+          Municipality size classification by population.
+          Values: Micro (< 5k), Pequeno (5k-20k), Médio (20k-100k),
+                  Grande (100k-500k), Metrópole (500k+)
+        data_tests:
+          - accepted_values:
+              values:
+                - 'Micro (< 5k)'
+                - 'Pequeno (5k-20k)'
+                - 'Médio (20k-100k)'
+                - 'Grande (100k-500k)'
+                - 'Metrópole (500k+)'
+
+      - name: idhm_2010
+        description: |
+          Human Development Index from 2010 census (0-1 scale).
+          Composite of Education, Longevity, and Income dimensions.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_2010 is not null"
+
+      - name: idhm_educacao
+        description: Education dimension of IDHM (0-1 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_educacao is not null"
+
+      - name: idhm_longevidade
+        description: Longevity dimension of IDHM (0-1 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_longevidade is not null"
+
+      - name: idhm_renda
+        description: Income dimension of IDHM (0-1 scale)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "idhm_renda is not null"
+
+      - name: faixa_idhm
+        description: |
+          IDHM classification tier.
+          Based on UNDP Human Development classification.
+        data_tests:
+          - accepted_values:
+              values: ['Muito Alto', 'Alto', 'Médio', 'Baixo', 'Muito Baixo']
+              config:
+                where: "faixa_idhm is not null"
+
+      - name: ivs_2010
+        description: |
+          Social Vulnerability Index from 2010 (0-1 scale).
+          0 = low vulnerability, 1 = high vulnerability.
+          Inverse interpretation to IDHM (lower is better).
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "ivs_2010 is not null"
+
+      - name: faixa_ivs
+        description: IVS vulnerability classification tier
+        data_tests:
+          - accepted_values:
+              values: ['Muito Baixa', 'Baixa', 'Média', 'Alta', 'Muito Alta']
+              config:
+                where: "faixa_ivs is not null"
+
+      - name: gini_2010
+        description: |
+          Gini coefficient for income inequality (0-1 scale).
+          0 = perfect equality, 1 = perfect inequality.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "gini_2010 is not null"
+
+      - name: renda_per_capita_2010
+        description: Per capita income in BRL (2010 census values)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000
+              row_condition: "renda_per_capita_2010 is not null"
+
+      - name: esperanca_vida_2010
+        description: Life expectancy at birth in years (2010 census)
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 40
+              max_value: 90
+              row_condition: "esperanca_vida_2010 is not null"
+
+      - name: _loaded_at
+        description: Timestamp when record was loaded
+
+  # ===========================================================================
+  # DIM_CALENDARIO - Calendar/Time Dimension
+  # ===========================================================================
   - name: dim_calendario
-    description: >
+    description: |
       Calendar dimension with year-level grain.
       Contains flags for census years, election years, and data availability.
 
+      This is a generated dimension spanning 1990-2030.
+      Used for time-series analysis and joining with fact tables.
+
+      Grain: One row per year
+    config:
+      tags: ['dimension', 'calendar', 'gold']
+
+    data_tests:
+      # Should have exactly 41 years (1990-2030)
+      - dbt_expectations.expect_table_row_count_to_equal:
+          value: 41
+
     columns:
       - name: sk_ano
-        description: Surrogate key (same as year for simplicity)
-        tests:
+        description: |
+          Surrogate key for the year (equals the year value).
+          Use this key for fact table joins.
+        data_tests:
           - unique
           - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1990
+              max_value: 2030
 
       - name: ano
-        description: Calendar year
-        tests:
+        description: Calendar year (1990-2030)
+        data_tests:
           - unique
           - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1990
+              max_value: 2030
+
+      - name: decada
+        description: |
+          Decade grouping (1990, 2000, 2010, 2020, 2030).
+          Useful for trend analysis across decades.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1990, 2000, 2010, 2020, 2030]
 
       - name: is_ano_censo
-        description: Flag indicating IBGE census year (1991, 2000, 2010, 2022)
+        description: |
+          Flag indicating IBGE census year.
+          Census years: 1991, 2000, 2010, 2022
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
 
       - name: is_ano_eleitoral_municipal
-        description: Flag indicating municipal election year (every 4 years)
+        description: |
+          Flag indicating municipal election year.
+          Municipal elections occur every 4 years (2000, 2004, 2008, etc.)
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
 
       - name: has_idhm_data
-        description: Flag indicating IDHM data availability
-
-  - name: dim_partido
-    description: >
-      Conformed dimension for Brazilian political parties with ideology classification.
-      Based on academic research from Power & Zucco BPCS surveys (2012, 2019),
-      Tarouco & Madeira (2013), and Bolognesi, Ribeiro & Codato (2023).
-
-      Grain: One row per political party
-
-      Key Features:
-      - Ideology spectrum (5-point categorical)
-      - Ideology block (3-point simplified: left/center/right)
-      - Numeric ideology score (-2 to +2) for regression analysis
-      - Big tent flag for pragmatic/catch-all parties
-
-    config:
-      tags: ['dimension', 'political', 'gold']
-
-    columns:
-      - name: sk_partido
-        description: Surrogate key for the party
-        tests:
-          - unique
+        description: |
+          Flag indicating IDHM data availability for this year.
+          IDHM only available for: 1991, 2000, 2010
+        data_tests:
           - not_null
-
-      - name: numero_partido
-        description: TSE official party number
-        tests:
-          - unique
-          - not_null
-
-      - name: sigla_partido
-        description: Party abbreviation (PT, PSDB, MDB, etc.)
-        tests:
-          - unique
-          - not_null
-
-      - name: nome_partido
-        description: Full party name
-
-      - name: espectro_ideologico
-        description: 5-point ideology spectrum
-        tests:
           - accepted_values:
-              values: ['esquerda', 'centro-esquerda', 'centro', 'centro-direita', 'direita']
+              values: [true, false]
 
-      - name: bloco_ideologico
-        description: Simplified 3-point ideology block
-        tests:
+      - name: has_siconfi_data
+        description: |
+          Flag indicating SICONFI fiscal data availability.
+          SICONFI data available from 2013 onwards.
+        data_tests:
+          - not_null
           - accepted_values:
-              values: ['esquerda', 'centro', 'direita']
+              values: [true, false]
 
-      - name: score_ideologico
-        description: Numeric ideology score (-2=far left to +2=far right)
+      - name: _loaded_at
+        description: Timestamp when record was loaded
 
-      - name: is_big_tent
-        description: Flag for pragmatic catch-all parties (MDB, PP, PSD)
-
-      - name: is_ativo
-        description: Flag indicating if party is currently active
-
-      - name: era_fundacao
-        description: Historical era when party was founded
-
-      - name: intensidade_ideologica
-        description: Absolute distance from center (0-2 scale)
-
-      - name: faixa_intensidade_ideologica
-        description: Categorical intensity (Forte, Moderado, Fraco/Pragmatico)
-
+  # ===========================================================================
+  # DIM_MANDATO_PREFEITO - Mayoral Mandate Dimension
+  # ===========================================================================
   - name: dim_mandato_prefeito
-    description: >
+    description: |
       Dimension table tracking mayoral terms (mandates) at municipality level.
-      Links municipalities to election results and party ideology over time.
+      Links municipalities to election results and party information over time.
 
-      Grain: One row per municipality per mandate term (4-year periods)
+      Term Mapping (election year -> mandate period):
+      - 2000 election -> 2001-2004 mandate
+      - 2004 election -> 2005-2008 mandate
+      - 2008 election -> 2009-2012 mandate
+      - 2012 election -> 2013-2016 mandate
+      - 2016 election -> 2017-2020 mandate
+      - 2020 election -> 2021-2024 mandate
+      - 2024 election -> 2025-2028 mandate
 
       Key Features:
       - Political continuity tracking (same party reelection)
-      - Ideological transition analysis (shift direction and magnitude)
-      - Mandate sequence counting
+      - Mandate sequence counting per municipality
       - Competition level classification
+      - Electoral statistics
 
+      Grain: One row per municipality per mandate term
     config:
-      tags: ['dimension', 'political', 'gold']
+      tags: ['dimension', 'political', 'gold', 'mandate']
 
     columns:
       - name: sk_mandato
-        description: Surrogate key for the mandate
-        tests:
+        description: |
+          Surrogate key for the mandate (hash of municipality + election year).
+          Unique identifier for each mayoral term.
+        data_tests:
           - unique
           - not_null
 
       - name: sk_municipio
-        description: Foreign key to dim_municipio
-
-      - name: sk_partido
-        description: Foreign key to dim_partido (winning party)
+        description: |
+          Foreign key to dim_municipio.
+          Links mandate to municipality dimension.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_municipio')
+              field: sk_municipio
+              config:
+                severity: warn
 
       - name: id_municipio
-        description: IBGE municipality code
-        tests:
+        description: IBGE municipality code (natural key component)
+        data_tests:
           - not_null
 
       - name: ano_eleicao
-        description: Election year (2000, 2004, 2008, 2012, 2016, 2020)
-        tests:
+        description: Election year (2000, 2004, 2008, 2012, 2016, 2020, 2024)
+        data_tests:
           - not_null
+          - accepted_values:
+              values: [2000, 2004, 2008, 2012, 2016, 2020, 2024]
+
+      - name: nome_candidato
+        description: Full name of elected mayor
+
+      - name: nome_urna_candidato
+        description: Ballot name of elected mayor (name on voting machine)
 
       - name: periodo_mandato
-        description: Mandate period string (e.g., "2021-2024")
+        description: |
+          Mandate period string in format "YYYY-YYYY".
+          Example: "2021-2024" for 2020 election.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_match_regex:
+              regex: "^[0-9]{4}-[0-9]{4}$"
+
+      - name: ano_inicio_mandato
+        description: Year when mandate begins (election year + 1)
+        data_tests:
+          - not_null
+
+      - name: ano_fim_mandato
+        description: Year when mandate ends (election year + 4)
+        data_tests:
+          - not_null
+
+      - name: sequencia_mandato_municipio
+        description: |
+          Sequential number of mandate for this municipality.
+          Starts at 1 for the first mandate in the dataset (2000 election).
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 10
 
       - name: partido_vencedor
-        description: Winning party abbreviation
+        description: Abbreviation of winning party (PT, PSDB, MDB, etc.)
+        data_tests:
+          - not_null
+
+      - name: votos_vencedor
+        description: Number of votes received by winning candidate
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000
+
+      - name: total_votos
+        description: Total valid votes cast in the election
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000000
+
+      - name: turno_eleicao
+        description: |
+          Election round (1 or 2).
+          Second round only in municipalities with 200k+ voters.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2]
+
+      - name: total_candidatos
+        description: Number of candidates in the election
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 50
+
+      - name: total_partidos
+        description: Number of distinct parties with candidates
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 50
 
       - name: percentual_vencedor
-        description: Vote share percentage of winning candidate
+        description: |
+          Vote share percentage of winning candidate.
+          Calculated as (votos_vencedor / total_votos * 100).
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              row_condition: "percentual_vencedor is not null"
 
       - name: nivel_competicao
-        description: Electoral competition level
-        tests:
+        description: |
+          Electoral competition level classification.
+          Based on number of candidates:
+          - Sem Competicao: 1 candidate
+          - Bipolar: 2 candidates
+          - Moderada: 3-4 candidates
+          - Alta: 5+ candidates
+        data_tests:
+          - not_null
           - accepted_values:
               values: ['Sem Competicao', 'Bipolar', 'Moderada', 'Alta']
 
-      - name: espectro_ideologico
-        description: Winning party ideology spectrum
+      - name: partido_mandato_anterior
+        description: Party that held the previous mandate (null for first mandate)
 
-      - name: bloco_ideologico
-        description: Winning party ideology block (esquerda/centro/direita)
+      - name: eleicao_anterior
+        description: Year of previous election (null for first mandate)
 
       - name: is_continuidade_partidaria
-        description: Flag indicating same party won consecutive mandate
+        description: |
+          Flag indicating same party won consecutive mandates.
+          True if current party equals previous party AND elections are consecutive.
+        data_tests:
+          - accepted_values:
+              values: [true, false]
 
-      - name: delta_ideologico
-        description: Change in ideology score from previous mandate
+      - name: is_mudanca_partido
+        description: |
+          Flag indicating party changed from previous mandate.
+          Null for first mandate, otherwise true/false.
+        data_tests:
+          - accepted_values:
+              values: [true, false]
+              config:
+                where: "is_mudanca_partido is not null"
 
-      - name: tipo_transicao_ideologica
-        description: Categorical description of ideological transition
+      - name: sequencia_partido_municipio
+        description: |
+          Running count of party continuity breaks.
+          Increments when party changes, stays same when party continues.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 10
 
-      - name: direcao_mudanca_ideologica
-        description: Direction of ideological shift (esquerda/direita/neutro)
+      - name: _loaded_at
+        description: Timestamp when record was loaded
